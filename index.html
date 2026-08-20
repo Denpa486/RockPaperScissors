@@ -1,0 +1,1166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>石头剪刀升龙拳 - Boss Rush 合作版</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --text: #e0e0e0;
+    --accent1: #4ec9ff;
+    --accent2: #ff6b6b;
+    --gold: #ffc107;
+    --green: #34d399;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); font-family: 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; overflow: hidden; height: 100vh; }
+  #game-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+  #ui-overlay { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+
+  #top-hud { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; z-index: 10; pointer-events: none; }
+  .title { font-size: 20px; font-weight: 800; letter-spacing: 2px; background: linear-gradient(135deg, var(--accent1), var(--gold), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  #phase-indicator { font-size: 15px; font-weight: 700; letter-spacing: 2px; padding: 6px 18px; border-radius: 6px; border: 1px solid #ffffff22; }
+  .phase-waiting  { background: #12121a; color: #888; }
+  .phase-select   { background: #1a3a5c; color: var(--accent1); border-color: #4ec9ff44; }
+  .phase-execute  { background: #2a1a3a; color: #c084fc; border-color: #c084fc44; }
+  .phase-boss     { background: #3a1a1a; color: var(--accent2); border-color: #ff6b6b44; animation: pulse 0.8s infinite; }
+  .phase-resolve  { background: #3a2a0a; color: var(--gold); border-color: #ffc10744; }
+  .phase-roundend { background: #1a1a3a; color: #a78bfa; border-color: #a78bfa44; }
+  .phase-gameover { background: #2a2a0a; color: var(--gold); border-color: #ffc10744; }
+  .phase-victory  { background: #0a2a1a; color: var(--green); border-color: #34d39944; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+  #round-indicator { font-size: 14px; color: #999; letter-spacing: 1px; }
+
+  #boss-hp-wrap { position: fixed; top: 52px; left: 50%; transform: translateX(-50%); width: min(560px, 70vw); z-index: 10; pointer-events: none; display: flex; align-items: center; gap: 10px; }
+  #boss-hp-label { color: var(--accent2); font-weight: 700; font-size: 13px; letter-spacing: 1px; }
+  #boss-hp-bar { flex: 1; height: 14px; border-radius: 7px; background: #1a1a22; border: 1px solid #ff6b6b33; overflow: hidden; }
+  #boss-hp-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff6b6b, #ffc107); transition: width 0.4s ease; }
+  #boss-hp-text { color: #ffb3b3; font-size: 12px; font-weight: 600; min-width: 42px; text-align: right; }
+
+  #players-hud { position: fixed; bottom: 0; left: 0; right: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 4px 10px; z-index: 10; pointer-events: none; }
+  .p-hud { background: rgba(14,14,24,0.88); border: 1px solid #ffffff14; border-radius: 8px; padding: 4px 8px; min-height: 42px; transition: all 0.3s; }
+  .p-hud.inactive { opacity: 0.25; }
+  .p-hud.dead { opacity: 0.4; filter: grayscale(0.9); }
+  .p-hud.locked { border-color: var(--green); box-shadow: 0 0 12px rgba(52,211,153,0.3); }
+  .p-hud-row1 { display: flex; align-items: center; justify-content: space-between; }
+  .p-name { font-weight: 800; font-size: 14px; letter-spacing: 1px; }
+  .p-status { font-size: 11px; color: #aaa; }
+  .p-status.attack { color: var(--accent2); font-weight: 700; }
+  .p-status.guard  { color: var(--accent1); font-weight: 700; }
+  .p-status.dodge  { color: var(--green); font-weight: 700; }
+  .p-hp-wrap { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
+  .p-hp-bar { flex: 1; height: 9px; border-radius: 4px; background: #1a1a22; overflow: hidden; }
+  .p-hp-fill { height: 100%; background: linear-gradient(90deg, #34d399, #4ec9ff); transition: width 0.3s; }
+  .p-hp-text { font-size: 11px; color: #ccc; font-weight: 600; min-width: 24px; }
+  .p-combo { display: flex; gap: 4px; margin-top: 4px; font-size: 13px; min-height: 16px; }
+  .p-combo .slot { width: 18px; height: 18px; border-radius: 4px; border: 1px dashed #ffffff2a; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
+  .p-combo .slot.filled { border-style: solid; background: #ffffff0d; }
+
+  #controls { position: fixed; bottom: 84px; right: 14px; display: flex; flex-direction: column; gap: 6px; z-index: 10; }
+  .btn { font-size: 13px; padding: 8px 16px; border-radius: 6px; border: 1px solid #555; background: #12121ae6; color: #ccc; cursor: pointer; letter-spacing: 1px; transition: all 0.2s; pointer-events: auto; }
+  .btn:hover { border-color: var(--accent1); color: var(--accent1); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  #message-box { position: fixed; top: 46%; left: 50%; transform: translate(-50%,-50%); font-size: 26px; font-weight: 800; letter-spacing: 3px; color: #fff; text-align: center; z-index: 8; text-shadow: 0 0 24px rgba(0,0,0,0.9),0 2px 8px rgba(0,0,0,0.8); pointer-events: none; transition: opacity 0.3s; }
+  #message-box.small { font-size: 15px; color: #ddd; letter-spacing: 1px; }
+  #camera-video { position: fixed; right: 14px; bottom: 190px; width: 180px; height: 135px; object-fit: cover; border-radius: 10px; border: 1px solid #ffffff33; background: #000; transform: scaleX(-1); opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 9; }
+  #camera-video.on { opacity: 0.9; }
+  #demo-hint { position: fixed; bottom: 84px; left: 14px; font-size: 11px; color: #888; z-index: 10; pointer-events: none; }
+  #pose-debug { position: fixed; left: 12px; bottom: 64px; width: 248px; padding: 8px 10px; background: rgba(8,10,18,0.74); border: 1px solid #ffffff22; border-radius: 10px; z-index: 9; pointer-events: none; font-family: Consolas,'Courier New',monospace; display: none; }
+  #pose-debug-title { font-size: 11px; color: #8be9fd; letter-spacing: 1px; font-weight: 700; margin-bottom: 2px; }
+  #pose-debug-move { font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 6px; }
+  #pose-debug-canvas { display: block; width: 220px; height: 150px; margin: 0 auto 6px; }
+  #pose-debug-coords { font-size: 10px; line-height: 1.55; color: #c3ccd8; white-space: pre; }
+  #help-panel { position: fixed; left: 14px; top: 60px; width: 212px; padding: 10px 12px; background: rgba(10,12,20,0.72); border: 1px solid #ffffff1f; border-radius: 10px; z-index: 9; pointer-events: none; }
+  #help-panel .h-title { font-size: 13px; font-weight: 800; color: #ffd166; margin-bottom: 6px; letter-spacing: 1px; }
+  #help-panel .h-row { font-size: 12px; color: #c9d1dc; line-height: 2; }
+  #help-panel .h-row b { color: #fff; font-weight: 700; }
+</style>
+</head>
+<body>
+<canvas id="game-canvas"></canvas>
+<canvas id="ui-overlay"></canvas>
+
+<div id="top-hud">
+  <span class="title">🪨✂️ 石头剪刀升龙拳 · Boss Rush</span>
+  <span id="phase-indicator" class="phase-waiting">⏳ 等待开始</span>
+  <span id="round-indicator">回合 0</span>
+</div>
+
+<div id="boss-hp-wrap">
+  <span id="boss-hp-label">👹 BOSS</span>
+  <div id="boss-hp-bar"><div id="boss-hp-fill"></div></div>
+  <span id="boss-hp-text">20/20</span>
+</div>
+
+<div id="players-hud">
+  <div class="p-hud inactive" id="hud-0"><div class="p-hud-row1"><span class="p-name" style="color:#4ec9ff;">P1</span><span class="p-status">未就位</span></div><div class="p-hp-wrap"><div class="p-hp-bar"><div class="p-hp-fill" style="width:100%"></div></div><span class="p-hp-text">10</span></div><div class="p-combo"><span class="slot"></span><span class="slot"></span></div></div>
+  <div class="p-hud inactive" id="hud-1"><div class="p-hud-row1"><span class="p-name" style="color:#69f0ae;">P2</span><span class="p-status">未就位</span></div><div class="p-hp-wrap"><div class="p-hp-bar"><div class="p-hp-fill" style="width:100%"></div></div><span class="p-hp-text">10</span></div><div class="p-combo"><span class="slot"></span><span class="slot"></span></div></div>
+  <div class="p-hud inactive" id="hud-2"><div class="p-hud-row1"><span class="p-name" style="color:#ffc107;">P3</span><span class="p-status">未就位</span></div><div class="p-hp-wrap"><div class="p-hp-bar"><div class="p-hp-fill" style="width:100%"></div></div><span class="p-hp-text">10</span></div><div class="p-combo"><span class="slot"></span><span class="slot"></span></div></div>
+  <div class="p-hud inactive" id="hud-3"><div class="p-hud-row1"><span class="p-name" style="color:#8b5cf6;">P4</span><span class="p-status">未就位</span></div><div class="p-hp-wrap"><div class="p-hp-bar"><div class="p-hp-fill" style="width:100%"></div></div><span class="p-hp-text">10</span></div><div class="p-combo"><span class="slot"></span><span class="slot"></span></div></div>
+</div>
+
+<div id="controls">
+  <button class="btn" id="camera-btn">🎥 开启摄像头</button>
+  <button class="btn" id="start-btn">▶ 开始游戏</button>
+</div>
+
+<div id="message-box">点击「开始游戏」，或开启摄像头后自动开始</div>
+<div id="demo-hint">演示模式：加 ?demo 参数自动模拟</div>
+
+<div id="help-panel">
+  <div class="h-title">🎮 怎么玩</div>
+  <div class="h-row">✂️ <b>剪刀</b>：手臂前刺 · 1 伤</div>
+  <div class="h-row">🐉 <b>升龙拳</b>：手臂上勾 · 2 伤</div>
+  <div class="h-row">🪨 <b>石头</b>：双臂交叉 · 防御/反击</div>
+  <div class="h-row">🚫 <b>垂手</b>：不出招</div>
+  <div class="h-row">↔️ <b>身体侧倾</b>：换轨道躲闪</div>
+</div>
+
+<div id="pose-debug">
+  <div id="pose-debug-title">🦴 骨骼捕捉</div>
+  <div id="pose-debug-move">— 未识别</div>
+  <canvas id="pose-debug-canvas" width="220" height="150"></canvas>
+  <div id="pose-debug-coords">未检测到骨骼</div>
+</div>
+
+<video id="camera-video" autoplay playsinline></video>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js';
+import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/+esm';
+
+// ═══════════════════════════════════════════════════════════
+//  常量与数据表
+// ═══════════════════════════════════════════════════════════
+const MAX_HP_PLAYER = 10;
+const MAX_HP_BOSS = 20;
+const MAX_PLAYERS = 4;
+const COMBO_LEN = 2;
+const SELECT_MS = 5000;
+const EXECUTE_MS = 2400;
+const BOSS_WARN_MS = 5000;
+const ROUND_END_MS = 2200;
+const GESTURE_HOLD_MS = 800;
+const RECONFIRM_MS = 1000;
+const LANE_STEP = 1.8; // = 轨道间距，倾斜一次正好切到下一条轨道
+const WORLD_SHIFT_X = 2.5; // 轨道组移到世界 +X（=屏幕左侧），Boss 留在世界中心（画面中央消失点）
+
+const MOVE = { STONE:0, SCISSORS:1, DRAGON:2, PASS:3 };
+const MOVES = {
+  [MOVE.STONE]:    { key:'STONE', name:'石头·守', icon:'🪨', type:'guard',  damage:0, color:'#4ec9ff' },
+  [MOVE.SCISSORS]: { key:'SCISSORS', name:'剪刀·刺', icon:'✂️', type:'attack', damage:1, color:'#69f0ae' },
+  [MOVE.DRAGON]:   { key:'DRAGON', name:'升龙拳', icon:'🐉', type:'attack', damage:2, color:'#ffc107' },
+  [MOVE.PASS]:     { key:'PASS', name:'不出招', icon:'🚫', type:'pass', damage:0, color:'#8b5cf6' },
+};
+const MOVE_NAMES = [MOVE.STONE,MOVE.SCISSORS,MOVE.DRAGON,MOVE.PASS].map(id=>MOVES[id].name);
+const MOVE_ICONS = [MOVE.STONE,MOVE.SCISSORS,MOVE.DRAGON,MOVE.PASS].map(id=>MOVES[id].icon);
+
+const BOSS_ATTACK = { MELEE:0, RANGED:1 };
+const BOSS_MELEE_DMG = 3;
+const BOSS_RANGED_DMG = 2;
+const BOSS_RANGED_GUARDED = 1;
+const COUNTER_DMG = 1;
+
+const PHASE = { WAITING:0, SELECT:1, EXECUTE:2, BOSS_ATTACK:3, RESOLVE:4, ROUND_END:5, GAMEOVER:6, VICTORY:7 };
+
+// ═══════════════════════════════════════════════════════════
+//  DOM 引用
+// ═══════════════════════════════════════════════════════════
+const canvas = document.getElementById('game-canvas');
+const overlay = document.getElementById('ui-overlay');
+const octx = overlay.getContext('2d');
+const phaseEl = document.getElementById('phase-indicator');
+const roundEl = document.getElementById('round-indicator');
+const bossHpFill = document.getElementById('boss-hp-fill');
+const bossHpText = document.getElementById('boss-hp-text');
+const messageBox = document.getElementById('message-box');
+const cameraBtn = document.getElementById('camera-btn');
+const startBtn = document.getElementById('start-btn');
+const cameraVideo = document.getElementById('camera-video');
+const demoHint = document.getElementById('demo-hint');
+const poseDebugBox = document.getElementById('pose-debug');
+const poseDebugMove = document.getElementById('pose-debug-move');
+const poseDebugCanvas = document.getElementById('pose-debug-canvas');
+const poseDebugCtx = poseDebugCanvas.getContext('2d');
+const poseDebugCoords = document.getElementById('pose-debug-coords');
+
+// ═══════════════════════════════════════════════════════════
+//  Three.js 场景
+// ═══════════════════════════════════════════════════════════
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0d18);
+scene.fog = new THREE.Fog(0x0d0d18, 60, 140);
+
+const camera = new THREE.PerspectiveCamera(78, window.innerWidth/window.innerHeight, 0.1, 200);
+// 地铁跑酷式第三人称：摄像机居中看向正前方，轨道落在画面左侧、消失点（Boss）在画面中央
+camera.position.set(0, 5.0, -6);
+camera.lookAt(0, 1.2, 16);
+
+const ambient = new THREE.AmbientLight(0xffffff, 0.55);
+scene.add(ambient);
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.1);
+dirLight.position.set(8, 20, 6);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(2048, 2048);
+dirLight.shadow.camera.left = -35;
+dirLight.shadow.camera.right = 35;
+dirLight.shadow.camera.top = 35;
+dirLight.shadow.camera.bottom = -35;
+scene.add(dirLight);
+const rimLight = new THREE.DirectionalLight(0x4ec9ff, 0.35);
+rimLight.position.set(-12, 8, -6);
+scene.add(rimLight);
+
+// ── 地面与三轨道（地铁跑酷式，轨道整体偏左、消失点在画面中央）──
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 140), new THREE.MeshStandardMaterial({ color:0x10101a, roughness:0.95 }));
+ground.rotation.x = -Math.PI/2;
+ground.position.set(0, 0, 16);
+ground.receiveShadow = true;
+scene.add(ground);
+
+// 道路：比三条轨道更宽的深色沥青带，整体左移到 WORLD_SHIFT_X（4 人时外侧玩家也能站上路面）
+const road = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 46), new THREE.MeshStandardMaterial({ color:0x1b1b2a, roughness:0.9 }));
+road.rotation.x = -Math.PI/2;
+road.position.set(WORLD_SHIFT_X, 0.01, 17);
+road.receiveShadow = true;
+scene.add(road);
+
+// 三条轨道：中灰跑道 + 亮黄边界线 + 前进箭头，加宽并左移，保证画面内三条轨道肉眼可辨
+const TRACK_X = [-1.8, 0, 1.8].map(x => x + WORLD_SHIFT_X);
+const TRACK_W = 1.7;
+const laneMat = new THREE.MeshStandardMaterial({ color:0x3c3c56, roughness:0.65, metalness:0.12 });
+const yellow = new THREE.MeshBasicMaterial({ color:0xffd000 });
+for (const x of TRACK_X) {
+  const s = new THREE.Mesh(new THREE.PlaneGeometry(TRACK_W, 46), laneMat);
+  s.rotation.x = -Math.PI/2;
+  s.position.set(x, 0.02, 17);
+  s.receiveShadow = true;
+  scene.add(s);
+}
+// 轨道边界/分隔亮黄实线（3 条轨道 → 左右外侧各 1 条 + 中间分隔 2 条）
+for (const x of [-2.65, -0.9, 0.9, 2.65].map(x => x + WORLD_SHIFT_X)) {
+  const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 46), yellow);
+  ln.rotation.x = -Math.PI/2;
+  ln.position.set(x, 0.04, 17);
+  scene.add(ln);
+}
+// 每条轨道中央的前进箭头（半透明三角，尖端朝 +Z 前进方向）
+const chevGeo = new THREE.BufferGeometry();
+chevGeo.setAttribute('position', new THREE.Float32BufferAttribute([0,0.28,0, -0.24,-0.22,0, 0.24,-0.22,0], 3));
+chevGeo.setIndex([0,1,2]);
+const chevMat = new THREE.MeshBasicMaterial({ color:0xffe066, transparent:true, opacity:0.45, side:THREE.DoubleSide });
+for (const x of TRACK_X) {
+  for (let z = 2; z <= 30; z += 7) {
+    const cv = new THREE.Mesh(chevGeo, chevMat);
+    cv.rotation.x = Math.PI/2; // 平放，尖端朝 +Z（前进方向）
+    cv.position.set(x, 0.05, z);
+    scene.add(cv);
+  }
+}
+
+// ── Boss：红色立方体（巨大，居中在远处）──
+const bossGroup = new THREE.Group();
+const bossBox = new THREE.Mesh(new THREE.BoxGeometry(14, 28, 12), new THREE.MeshStandardMaterial({ color:0xcc2233, roughness:0.6, metalness:0.1 }));
+bossBox.position.set(0, 14, 0);
+bossBox.castShadow = true;
+bossGroup.add(bossBox);
+const eyeMat = new THREE.MeshStandardMaterial({ color:0xffcc22, emissive:0xcc8800 });
+const eyeGeo = new THREE.SphereGeometry(1.1, 12, 12);
+const eyeL = new THREE.Mesh(eyeGeo, eyeMat); eyeL.position.set(-2.3, 20, 6.2);
+const eyeR = new THREE.Mesh(eyeGeo, eyeMat); eyeR.position.set(2.3, 20, 6.2);
+bossGroup.add(eyeL, eyeR);
+// 嘴（白牙）
+const mouth = new THREE.Mesh(new THREE.BoxGeometry(4, 0.8, 0.4), new THREE.MeshStandardMaterial({ color:0xffffff }));
+mouth.position.set(0, 12, 6.2);
+bossGroup.add(mouth);
+bossGroup.position.set(0, 0, 36);
+scene.add(bossGroup);
+
+// 预警 3D 对象
+const warnGroup = new THREE.Group();
+scene.add(warnGroup);
+const warnRect = new THREE.Mesh(new THREE.PlaneGeometry(5.0, 5.6), new THREE.MeshBasicMaterial({ color:0xff2020, transparent:true, opacity:0.65, side:THREE.DoubleSide }));
+warnRect.rotation.set(0, Math.PI, 0); // 竖直立起，面向玩家方向
+warnGroup.add(warnRect);
+const exMark = makeTextSprite('!', 220, '#fff');
+exMark.scale.set(4.0, 4.0, 1);
+warnGroup.add(exMark);
+const rangeRing = new THREE.Mesh(new THREE.RingGeometry(0.6, 1.0, 40), new THREE.MeshBasicMaterial({ color:0xff2222, transparent:true, opacity:0.9, side:THREE.DoubleSide }));
+rangeRing.rotation.x = -Math.PI/2;
+warnGroup.add(rangeRing);
+const pulseRing = new THREE.Mesh(new THREE.RingGeometry(0.75, 0.95, 40), new THREE.MeshBasicMaterial({ color:0xffdd22, transparent:true, opacity:0.75, side:THREE.DoubleSide }));
+pulseRing.rotation.x = -Math.PI/2;
+warnGroup.add(pulseRing);
+const beamGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
+const beamLine = new THREE.Line(beamGeo, new THREE.LineBasicMaterial({ color:0xff3333, transparent:true, opacity:0.85 }));
+warnGroup.add(beamLine);
+warnGroup.visible = false;
+
+function makeTextSprite(text, fontSize, color) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 256;
+  const g = c.getContext('2d');
+  g.font = `900 ${fontSize}px Arial`;
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.lineWidth = 18; g.strokeStyle = '#000000aa'; g.strokeText(text, 128, 128);
+  g.fillStyle = color; g.fillText(text, 128, 128);
+  const tex = new THREE.CanvasTexture(c);
+  return new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false }));
+}
+
+// 漂浮伤害
+const floatPool = [];
+function spawnFloat(pos3, text, color) {
+  const s = makeTextSprite(text, 120, color);
+  s.position.copy(pos3); s.position.y += 1.5; s.scale.set(1.6, 1.6, 1);
+  scene.add(s);
+  floatPool.push({ sprite:s, life:1.0, vy:2.0 });
+}
+function updateFloats(dt) {
+  for (let i = floatPool.length-1; i >= 0; i--) {
+    const f = floatPool[i];
+    f.life -= dt; f.sprite.position.y += f.vy*dt;
+    f.sprite.material.opacity = Math.max(0, f.life);
+    if (f.life <= 0) { scene.remove(f.sprite); floatPool.splice(i,1); }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════
+//  玩家虚拟形象
+// ═══════════════════════════════════════════════════════════
+const PLAYER_STYLES = [
+  { color:0xffffff, name:'P1', label:'#4ec9ff' },
+  { color:0xe8f8ee, name:'P2', label:'#69f0ae' },
+  { color:0xfdf3dc, name:'P3', label:'#ffc107' },
+  { color:0xefe8ff, name:'P4', label:'#8b5cf6' },
+];
+
+// 双肩位置（相对 avatar 组，贴在躯干圆柱体两侧）——手臂从此处伸出，模拟真人
+const SHL = new THREE.Vector3(-0.42, 1.08, 0);
+const SHR = new THREE.Vector3(0.42, 1.08, 0);
+
+function createAvatar() {
+  const g = new THREE.Group();
+  const white = new THREE.MeshStandardMaterial({ color:0xf2f2f5, roughness:0.75 });
+  // 躯干：大圆柱胶囊（脚落地→肩膀），范围约 y 0~1.48
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.62, 6, 12), white.clone());
+  torso.position.set(0, 0.75, 0);
+  torso.castShadow = true; g.add(torso);
+  // 头：放在躯干顶端，紧贴肩膀上方
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 16, 16), white.clone());
+  head.position.set(0, 1.62, 0);
+  head.castShadow = true; g.add(head);
+  const armMat = () => new THREE.MeshStandardMaterial({ color:0xfafafc, roughness:0.7 });
+  const upperL = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,1,10), armMat());
+  const upperR = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,1,10), armMat());
+  const foreL  = new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.13,1,10), armMat());
+  const foreR  = new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.13,1,10), armMat());
+  [upperL,upperR,foreL,foreR].forEach(m => m.castShadow = true);
+  g.add(upperL, upperR, foreL, foreR);
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.12,12,12), new THREE.MeshBasicMaterial({ color:0x22ff88, transparent:true, opacity:0.9 }));
+  g.add(core);
+  return { group:g, torso, head, upperL, upperR, foreL, foreR, core };
+}
+
+function setLimb(mesh, a, b) {
+  const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
+  mesh.position.copy(mid);
+  const dir = new THREE.Vector3().subVectors(b, a);
+  const len = dir.length();
+  if (len < 0.001) { mesh.visible = false; return; }
+  mesh.visible = true;
+  mesh.scale.set(1, len, 1);
+  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
+}
+
+// ═══════════════════════════════════════════════════════════
+//  骨骼关键点 / 滤波
+// ═══════════════════════════════════════════════════════════
+const KP = { NOSE:0, L_SHOULDER:11, R_SHOULDER:12, L_ELBOW:13, R_ELBOW:14, L_WRIST:15, R_WRIST:16 };
+const ACTIVE_KP = Object.values(KP);
+const OE = { fcmin:1.0, beta:0.007, fcd:1.0, states:{}, initialized:false };
+function oeFilter(key, val, t) {
+  const s = OE.states[key];
+  if (!s) { OE.states[key] = { hatX:val, dx:0, lastT:t }; return val; }
+  const dt = (t - s.lastT)/1000;
+  if (dt <= 0) return s.hatX;
+  const dx = (val - s.hatX)/dt;
+  const alphaD = dt/(dt + 1/(2*Math.PI*OE.fcd));
+  s.dx += alphaD*(dx - s.dx);
+  const fc = OE.fcmin + OE.beta*Math.abs(s.dx);
+  const alpha = dt/(dt + 1/(2*Math.PI*fc));
+  s.hatX += alpha*(val - s.hatX);
+  s.lastT = t;
+  return s.hatX;
+}
+function applyFilter(raw) {
+  const t = performance.now();
+  const out = raw.map(p => ({ x:p.x, y:p.y, visibility:p.visibility }));
+  for (const idx of ACTIVE_KP) for (const axis of ['x','y']) {
+    const key = `${idx}_${axis}`;
+    if (!OE.states[key]) OE.states[key] = { hatX:raw[idx][axis], dx:0, lastT:t };
+    else out[idx][axis] = oeFilter(key, raw[idx][axis], t);
+  }
+  return out;
+}
+function scaleBone(start, end, targetLen) {
+  const dx = end.x-start.x, dy = end.y-start.y;
+  const cur = Math.hypot(dx, dy);
+  if (cur < 0.001) return;
+  const s = targetLen/cur;
+  end.x = start.x + dx*s; end.y = start.y + dy*s;
+}
+function applySymmetry(lm) {
+  const d = (a,b) => Math.hypot(a.x-b.x, a.y-b.y);
+  const uL = d(lm[KP.L_SHOULDER],lm[KP.L_ELBOW]), uR = d(lm[KP.R_SHOULDER],lm[KP.R_ELBOW]);
+  const fL = d(lm[KP.L_ELBOW],lm[KP.L_WRIST]), fR = d(lm[KP.R_ELBOW],lm[KP.R_WRIST]);
+  if (uL>0.001 && uR>0.001) { const av=(uL+uR)/2; scaleBone(lm[KP.L_SHOULDER],lm[KP.L_ELBOW],av); scaleBone(lm[KP.R_SHOULDER],lm[KP.R_ELBOW],av); }
+  if (fL>0.001 && fR>0.001) { const av=(fL+fR)/2; scaleBone(lm[KP.L_ELBOW],lm[KP.L_WRIST],av); scaleBone(lm[KP.R_ELBOW],lm[KP.R_WRIST],av); }
+}
+function pipeline(raw) { const f = applyFilter(raw); applySymmetry(f); return f; }
+
+// ═══════════════════════════════════════════════════════════
+//  手势分类
+// ═══════════════════════════════════════════════════════════
+function segIntersect(p1,p2,p3,p4) {
+  const o = (a,b,c) => (b.x-a.x)*(c.y-a.y) - (b.y-a.y)*(c.x-a.x);
+  const d1=o(p3,p4,p1), d2=o(p3,p4,p2), d3=o(p1,p2,p3), d4=o(p1,p2,p4);
+  return ((d1>0&&d2<0)||(d1<0&&d2>0)) && ((d3>0&&d4<0)||(d3<0&&d4>0));
+}
+function classifyGesture(lm) {
+  if (!lm) return null;
+  const P = i => ({ x:lm[i].x, y:lm[i].y, v:lm[i].visibility });
+  const lS=P(KP.L_SHOULDER), rS=P(KP.R_SHOULDER);
+  const lE=P(KP.L_ELBOW), rE=P(KP.R_ELBOW);
+  const lW=P(KP.L_WRIST), rW=P(KP.R_WRIST);
+  const minVis=0.55;
+  if (lS.v<minVis || rS.v<minVis) return null;
+  const sw = Math.abs(rS.x-lS.x);
+  if (sw < 0.05) return null;
+  const nose = lm[KP.NOSE];
+  const noseY = (nose && nose.visibility>0.4) ? nose.y : (lS.y+rS.y)/2 - sw*0.55;
+  const neckY = (lS.y+rS.y)/2;
+  const hipY = neckY + sw*2.2;
+
+  // 升龙
+  if ((lW.v>minVis && lW.y < noseY-0.03) || (rW.v>minVis && rW.y < noseY-0.03)) return MOVE.DRAGON;
+  // 石头：小臂 X 交叉
+  if (lE.v>minVis && lW.v>minVis && rE.v>minVis && rW.v>minVis) {
+    if (segIntersect(lE,lW,rE,rW)) {
+      const inChest = (lW.y>neckY+0.02 && lW.y<hipY-0.03) || (rW.y>neckY+0.02 && rW.y<hipY-0.03);
+      if (inChest) return MOVE.STONE;
+    }
+  }
+  // 剪刀：手臂水平前伸
+  const stab = (w,e,s,side) => (w.v>minVis && e.v>minVis) && (side==='left'? w.x<e.x-0.03 : w.x>e.x+0.03) && Math.abs(w.y-s.y)<0.16;
+  if (stab(lW,lE,lS,'left') || stab(rW,rE,rS,'right')) return MOVE.SCISSORS;
+  // 不出招：双腕下垂
+  if ((lW.v>minVis && lW.y>hipY) || (rW.v>minVis && rW.y>hipY)) return MOVE.PASS;
+  return null;
+}
+function detectLean(lm) {
+  if (!lm) return 0;
+  const lS=lm[KP.L_SHOULDER], rS=lm[KP.R_SHOULDER], nose=lm[KP.NOSE];
+  if (lS.visibility<0.5 || rS.visibility<0.5) return 0;
+  const midX=(lS.x+rS.x)/2;
+  const sw=Math.abs(rS.x-lS.x)||0.1;
+  const nX=(nose && nose.visibility>0.4)?nose.x:midX;
+  const off=(nX-midX)/sw;
+  if (off>0.42) return 1;
+  if (off<-0.42) return -1;
+  return 0;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  玩家状态
+// ═══════════════════════════════════════════════════════════
+let players = [];
+let activeCount = 0;
+function createPlayerState(index) {
+  const av = createAvatar();
+  scene.add(av.group);
+  return { index, active:false, alive:true, inited:false, hp:MAX_HP_PLAYER, combo:[], gesture:null, gestureHoldStart:0, lastConfirm:0, lean:0, leanSmooth:0, lane:0, defending:false, defendFrames:0, baseX:0, attackAnim:null, avatar:av, lm:null, colors:PLAYER_STYLES[index] };
+}
+// 三条轨道的 x 偏移（左=-1.8, 中=0, 右=+1.8），整体左移 WORLD_SHIFT_X，多个玩家均匀分布在三条轨道上
+const LANE_X = [-1.8, 0, 1.8].map(x => x + WORLD_SHIFT_X);
+const LANE_LAYOUT = {
+  1: [0],
+  2: [-1.8, 1.8],
+  3: [-1.8, 0, 1.8],
+  4: [-2.7, -0.9, 0.9, 2.7], // 4 人时扩展到轨道的边界
+};
+const PLAYER_Z = 4; // 玩家在 z=4（脚下区域中部，离摄像机近）
+function layoutPlayers() {
+  const xs = LANE_LAYOUT[Math.max(1,activeCount)] || LANE_LAYOUT[4];
+  players.forEach((p,i) => p.baseX = (xs[i] ?? xs[xs.length-1]) + WORLD_SHIFT_X);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  MediaPipe
+// ═══════════════════════════════════════════════════════════
+let poseLandmarker = null;
+let cameraActive = false;
+let lastVideoTime = -1;
+let lastPoses = [];
+
+async function initPoseDetector() {
+  const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm');
+  const models = [
+    { name:'full', url:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task' },
+    { name:'lite', url:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task' },
+  ];
+  let lastErr = null;
+  for (const m of models) {
+    try {
+      poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
+        baseOptions:{ modelAssetPath:m.url, delegate:'GPU' },
+        runningMode:'VIDEO', numPoses:MAX_PLAYERS,
+        minPoseDetectionConfidence:0.5, minPosePresenceConfidence:0.5, minTrackingConfidence:0.5,
+      });
+      console.log(`[Pose] 模型加载成功: ${m.name} 多人×${MAX_PLAYERS}`);
+      return;
+    } catch(e){ console.warn('[Pose]', m.name, '失败', e.message); lastErr = e; }
+  }
+  throw lastErr || new Error('模型加载失败');
+}
+
+function distributePoses(poses) {
+  const n = Math.min(poses.length, MAX_PLAYERS);
+  for (let i=0;i<MAX_PLAYERS;i++) {
+    if (!players[i]) players[i] = createPlayerState(i);
+    players[i].active = i<n;
+    players[i].lm = i<n ? pipeline(poses[i]) : null;
+  }
+  if (n !== activeCount) { activeCount = n; layoutPlayers(); players.forEach((p,i)=>{ if(i<n) p.inited=true; }); }
+}
+async function detectPose() {
+  if (!poseLandmarker || !cameraActive) return;
+  const now = performance.now();
+  if (cameraVideo.readyState>=2 && cameraVideo.currentTime !== lastVideoTime) {
+    lastVideoTime = cameraVideo.currentTime;
+    try {
+      const r = poseLandmarker.detectForVideo(cameraVideo, now);
+      const poses = r.poseLandmarks || [];
+      poses.sort((a,b) => ((a[KP.L_SHOULDER].x+a[KP.R_SHOULDER].x)/2) - ((b[KP.L_SHOULDER].x+b[KP.R_SHOULDER].x)/2));
+      lastPoses = poses;
+      distributePoses(poses);
+    } catch(e){}
+  }
+  requestAnimationFrame(detectPose);
+}
+
+// 演示模式
+const DEMO = new URLSearchParams(location.search).has('demo');
+function demoMoveFor(i, t) {
+  // 每个玩家周期性切换攻击/防御手势
+  const cycle = 4; // 4 秒一个手势循环，足够保持选中
+  const ph = ((t + i*1.3) % cycle) / cycle;
+  if (ph < 0.4) return MOVE.SCISSORS;
+  if (ph < 0.7) return MOVE.DRAGON;
+  return MOVE.STONE;
+}
+function demoPoses() {
+  if (!DEMO) return;
+  const t = performance.now()/1000;
+  const n = Math.max(1, activeCount||1);
+  const bases = LANE_LAYOUT[Math.min(4,Math.max(1,n))];
+  const fake = [];
+  for (let i=0;i<n;i++) {
+    const sw=0.14;
+    // 玩家 i 的基础屏幕 X 偏移对应世界 X
+    // 世界 x=-2.2→0.42, x=0→0.5, x=2.2→0.58
+    const baseOff = bases[i] / 8;  // 调整映射系数
+    // Boss 阶段每个玩家轮流切换轨道
+    let laneOff = 0;
+    if (phase === PHASE.BOSS_ATTACK) {
+      const lanePhase = ((t + i*1.1) % 6) / 6;
+      laneOff = lanePhase < 0.3 ? 0 : (lanePhase < 0.65 ? 1 : -1);
+    }
+    const midX = 0.5 + baseOff + laneOff*0.085;
+    const m = demoMoveFor(i, t);
+    // Boss 阶段玩家尽量摆防御（石头），让反击/减伤发生
+    const gesture = (phase === PHASE.BOSS_ATTACK && i===0) ? MOVE.STONE : m;
+    const wY = gesture===MOVE.DRAGON?0.28 : gesture===MOVE.SCISSORS?0.42 : gesture===MOVE.STONE?0.5 : 0.62;
+    // 倾斜：鼻子相对肩中点偏移，模拟头部左右摆动（系数需 > detectLean 阈值 0.42 才会触发躲闪）
+    const noseOff = phase===PHASE.BOSS_ATTACK ? laneOff*0.6 : 0;
+    const pt=(x,y,v=1)=>({x:midX+x*sw,y:y,z:0,visibility:v});
+    fake.push([
+      pt(noseOff,0.30),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),
+      pt(-0.5,0.46),pt(0.5,0.46),pt(-0.5,0.56),pt(0.5,0.56),
+      gesture===MOVE.STONE?pt(0.05,0.50):pt(-0.55,wY+0.05),
+      gesture===MOVE.STONE?pt(-0.05,0.50):pt(0.55,wY+0.05),
+    ]);
+  }
+  lastPoses = fake;
+  distributePoses(fake);
+}
+
+// 骨骼捕捉调试窗（仅 DEMO 测试版本显示）：火柴人 + 归一化坐标 + lean/distance
+function drawPoseDebug() {
+  const showDebug = DEMO || cameraActive;
+  poseDebugBox.style.display = showDebug ? 'block' : 'none';
+  if (demoHint) {
+    if (DEMO || cameraActive) demoHint.style.display = 'none';
+    else { demoHint.style.display = 'block'; demoHint.textContent = '提示：点击右下角「开启摄像头」开始游玩'; }
+  }
+  if (!showDebug) return;
+  const p = players[0];
+  const ctx = poseDebugCtx;
+  const cw = poseDebugCanvas.width, ch = poseDebugCanvas.height;
+  ctx.clearRect(0, 0, cw, ch);
+
+  const g = p && p.lm ? p.gesture : null;
+  poseDebugMove.textContent =
+    g === MOVE.SCISSORS ? '✂️ 剪刀·刺' :
+    g === MOVE.DRAGON ? '🐉 升龙拳' :
+    g === MOVE.STONE ? '🪨 石头·守' :
+    g === MOVE.PASS ? '🚫 不出招' : '— 未识别';
+
+  const lm = p ? p.lm : null;
+  if (!lm || lm[KP.L_SHOULDER].visibility < 0.3) {
+    poseDebugCoords.textContent = '未检测到骨骼';
+    return;
+  }
+
+  const pt = i => ({ x: lm[i].x, y: lm[i].y });
+  const nose = pt(KP.NOSE);
+  const lS = pt(KP.L_SHOULDER), rS = pt(KP.R_SHOULDER);
+  const lE = pt(KP.L_ELBOW), rE = pt(KP.R_ELBOW);
+  const lW = pt(KP.L_WRIST), rW = pt(KP.R_WRIST);
+  const neck = { x: (lS.x + rS.x) / 2, y: (lS.y + rS.y) / 2 };
+
+  // 归一化坐标 → 画布坐标
+  const padX = 26, padY = 22;
+  const sx = v => padX + v.x * (cw - padX * 2);
+  const sy = v => padY + v.y * (ch - padY * 2);
+
+  const line = (a, b, color, w) => {
+    ctx.strokeStyle = color; ctx.lineWidth = w; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(sx(a), sy(a)); ctx.lineTo(sx(b), sy(b)); ctx.stroke();
+  };
+  const joint = (a, r, color) => {
+    ctx.fillStyle = color; ctx.beginPath(); ctx.arc(sx(a), sy(a), r, 0, Math.PI * 2); ctx.fill();
+  };
+
+  // 骨骼连线：颈-鼻、颈-肩、肩-肘、肘-腕
+  const bone = '#5ad1ff';
+  line(nose, neck, bone, 2.5);
+  line(neck, lS, bone, 2); line(neck, rS, bone, 2);
+  line(lS, lE, bone, 2); line(rS, rE, bone, 2);
+  line(lE, lW, bone, 2); line(rE, rW, bone, 2);
+  line(lS, rS, 'rgba(255,255,255,0.35)', 1.5);
+
+  // 关节点
+  joint(nose, 6, '#ffffff');
+  joint(neck, 4, '#ffd166');
+  joint(lS, 4.5, '#4ec9ff'); joint(rS, 4.5, '#4ec9ff');
+  joint(lE, 4, '#69f0ae'); joint(rE, 4, '#69f0ae');
+  joint(lW, 4.5, '#ff6b6b'); joint(rW, 4.5, '#ff6b6b');
+
+  // 数值：lean / lane / 肩宽 / 双腕距
+  const sw = Math.abs(rS.x - lS.x);
+  const midX = (lS.x + rS.x) / 2;
+  const off = sw > 0.05 ? (nose.x - midX) / sw : 0;
+  const wristDist = Math.hypot(lW.x - rW.x, lW.y - rW.y);
+  const lane = p ? p.lane : 0;
+  const f2 = v => (v ?? 0).toFixed(2);
+  poseDebugCoords.textContent =
+`鼻 (${f2(nose.x)},${f2(nose.y)})  颈 (${f2(neck.x)},${f2(neck.y)})
+左肩(${f2(lS.x)},${f2(lS.y)}) 右肩(${f2(rS.x)},${f2(rS.y)})
+左肘(${f2(lE.x)},${f2(lE.y)}) 右肘(${f2(rE.x)},${f2(rE.y)})
+左腕(${f2(lW.x)},${f2(lW.y)}) 右腕(${f2(rW.x)},${f2(rW.y)})
+lean ${f2(off)} | lane ${lane} | 肩宽 ${f2(sw)}
+双腕距 ${f2(wristDist)}`;
+}
+
+// ═══════════════════════════════════════════════════════════
+//  回合状态机
+// ═══════════════════════════════════════════════════════════
+let phase = PHASE.WAITING;
+let phaseStart = 0;
+let round = 0;
+let bossHp = MAX_HP_BOSS;
+let bossAttackType = BOSS_ATTACK.MELEE;
+let bossAttackLane = 0;
+let bossAttackResolved = false;
+let prevWarn = false;
+
+const HUD = [0,1,2,3].map(i => {
+  const el = document.getElementById(`hud-${i}`);
+  return { el, fill:el.querySelector('.p-hp-fill'), hpText:el.querySelector('.p-hp-text'), status:el.querySelector('.p-status'), combo:el.querySelector('.p-combo') };
+});
+
+function setPhase(p) {
+  phase = p; phaseStart = performance.now(); bossAttackResolved = false;
+  const map = {
+    [PHASE.WAITING]:['phase-waiting','⏳ 等待开始'],
+    [PHASE.SELECT]:['phase-select','🎯 选招阶段'],
+    [PHASE.EXECUTE]:['phase-execute','⚔️ 出招阶段'],
+    [PHASE.BOSS_ATTACK]:['phase-boss','👹 Boss 攻击！'],
+    [PHASE.RESOLVE]:['phase-resolve','💥 结算'],
+    [PHASE.ROUND_END]:['phase-roundend','✅ 回合结束'],
+    [PHASE.GAMEOVER]:['phase-gameover','🏁 游戏结束'],
+    [PHASE.VICTORY]:['phase-victory','🏆 胜利！'],
+  };
+  phaseEl.className = map[p][0]; phaseEl.textContent = map[p][1];
+  if (p === PHASE.BOSS_ATTACK) startBossAttack();
+  if (p === PHASE.VICTORY) setMessage('🏆 胜利！Boss 已被击败\n点击「开始游戏」再战', false);
+  if (p === PHASE.GAMEOVER) setMessage('🏁 全员倒下\n点击「开始游戏」重开', false);
+}
+
+function startGame() {
+  round = 0; bossHp = MAX_HP_BOSS;
+  players.forEach(p => { p.hp=MAX_HP_PLAYER; p.alive=true; p.combo=[]; p.defending=false; p.attackAnim=null; });
+  updateBossHp();
+  startRound();
+}
+function startRound() {
+  round++; roundEl.textContent = `回合 ${round}`;
+  players.forEach(p => { p.combo=[]; p.gesture=null; p.gestureHoldStart=0; p.defending=false; p.defendFrames=0; p.attackAnim=null; });
+  lastExecutedSeg = -1;
+  warnGroup.visible = false;
+  setPhase(PHASE.SELECT);
+  setMessage(`第 ${round} 回合 | 摆出招式构筑组合（每人 ${COMBO_LEN} 招）`, true);
+}
+function setMessage(t, small=false) { messageBox.textContent = t; messageBox.className = small?'small':''; }
+
+function tryConfirmGesture(p, now) {
+  if (DEMO) {
+    // 演示模式：每 700ms 自动确认一个招式，只选攻击/不出招（选招阶段不选防御）
+    if (p.combo.length < COMBO_LEN && now - p.lastConfirm > 700) {
+      const r = Math.sin(now/400 + p.index*3) > 0 ? MOVE.SCISSORS : MOVE.DRAGON;
+      p.combo.push(r);
+      p.lastConfirm = now;
+      spawnFloat(new THREE.Vector3(p.baseX + p.leanSmooth*LANE_STEP, 3.2, 12), `${MOVE_ICONS[r]} 已选`, '#ffffff');
+    }
+    return;
+  }
+  if (now - p.lastConfirm < RECONFIRM_MS) return;
+  if (p.gesture === null) { p.gestureHoldStart = 0; return; }
+  if (p.gestureHoldStart === 0) { p.gestureHoldStart = now; return; }
+  if (now - p.gestureHoldStart >= GESTURE_HOLD_MS) {
+    p.combo.push(p.gesture);
+    p.lastConfirm = now; p.gestureHoldStart = 0;
+    spawnFloat(new THREE.Vector3(p.baseX + p.leanSmooth*LANE_STEP, 3.2, 12), `${MOVE_ICONS[p.gesture]} 已选`, '#ffffff');
+  }
+}
+function allLocked() {
+  const act = players.filter(p => p.active && p.alive);
+  return act.length>0 && act.every(p => p.combo.length>=COMBO_LEN);
+}
+function finishSelect() {
+  players.forEach(p => { if (p.active && p.alive) while (p.combo.length<COMBO_LEN) p.combo.push(MOVE.PASS); });
+  setPhase(PHASE.EXECUTE);
+}
+
+function updateExecute(dt, now) {
+  const el = now - phaseStart;
+  const segDur = EXECUTE_MS/COMBO_LEN;
+  const seg = Math.min(COMBO_LEN-1, Math.floor(el/segDur));
+  const segT = (el%segDur)/segDur;
+  // 出招动画
+  players.forEach(p => {
+    if (!p.active || !p.alive) return;
+    const mv = p.combo[seg];
+    p.defending = false;
+    // 简单出招动画：若已播放过当前段则设攻击动画
+    if (!p.attackAnim || p.attackAnim.seg !== seg) {
+      p.attackAnim = { seg, move:mv, t:0 };
+    } else {
+      p.attackAnim.t += dt;
+    }
+  });
+  // 逐段结算伤害（每段开始时结算一次）
+  const segStart = Math.floor((now-phaseStart)/segDur);
+  // 用 marker 防止重复结算
+  if (segStart !== lastExecutedSeg) {
+    lastExecutedSeg = segStart;
+    if (segStart < COMBO_LEN) {
+      players.forEach(p => {
+        if (!p.active || !p.alive) return;
+        const mv = p.combo[segStart];
+        if (MOVES[mv].type === 'attack') {
+          let dmg = MOVES[mv].damage;
+          // 连击增伤：同回合上一段也是攻击，则本段 +1 伤害
+          if (segStart > 0 && MOVES[p.combo[segStart-1]].type === 'attack') dmg += 1;
+          bossHp = Math.max(0, bossHp - dmg);
+          const label = dmg === MOVES[mv].damage ? `-${dmg}` : `连击 -${dmg}`;
+          spawnFloat(new THREE.Vector3(0, 24, 32), label, '#ff6b6b');
+          updateBossHp();
+        }
+      });
+      if (bossHp <= 0) { setPhase(PHASE.VICTORY); return; }
+    }
+  }
+  if (el >= EXECUTE_MS) setPhase(PHASE.BOSS_ATTACK);
+}
+let lastExecutedSeg = -1;
+
+function startBossAttack() {
+  bossAttackType = Math.random() < 0.5 ? BOSS_ATTACK.MELEE : BOSS_ATTACK.RANGED;
+  bossAttackLane = Math.floor(Math.random()*3)-1;
+  prevWarn = false;
+  // 控制各子组件显隐：近战只显示矩形+感叹号；远程只显示红圈+脉冲+弹道
+  warnRect.visible = exMark.visible = bossAttackType === BOSS_ATTACK.MELEE;
+  rangeRing.visible = pulseRing.visible = beamLine.visible = bossAttackType === BOSS_ATTACK.RANGED;
+  warnGroup.visible = false;
+  setMessage(bossAttackType===BOSS_ATTACK.MELEE ? '👹 近身挥击！摆「石头」防御 或 倾斜躲闪' : '👹 远程吐弹！倾斜躲闪（或石头减伤）', true);
+}
+
+function updateBossAttack(dt, now) {
+  const el = now - phaseStart;
+  const t = el / BOSS_WARN_MS;
+  // 每玩家锁定其姿态（防御/倾斜）
+  players.forEach(p => {
+    if (!p.active || !p.alive) return;
+    const lm = p.lm;
+    if (lm) {
+      const g = classifyGesture(lm);
+      // 防御需在 Boss 阶段保持石头
+      const isGuard = g === MOVE.STONE;
+      if (isGuard) { p.defending = true; p.defendFrames++; }
+      else { p.defending = false; p.defendFrames = 0; }
+      p.lean = detectLean(lm);
+    }
+    p.leanSmooth += (p.lean - p.leanSmooth)*Math.min(1, dt*6);
+    p.lane = Math.round(p.leanSmooth);
+  });
+
+  // 预警可视化
+  warnGroup.visible = true;
+  // 攻击落点 = bossAttackLane 轨道的 x 坐标（基于 LANE_X）
+  const targetLaneX = LANE_X[bossAttackLane + 1]; // lane -1/0/1 → 0/1/2
+  if (bossAttackType === BOSS_ATTACK.MELEE) {
+    const flash = Math.floor(el/350)%2===0;
+    warnRect.material.color.setHex(flash?0xff3030:0xffee00);
+    exMark.material.opacity = flash?1:0.3;
+    // 近战预警：放在 Boss 与玩家之间的空中（z≈20）
+    warnGroup.position.set(targetLaneX, 10, 20);
+    warnRect.rotation.set(0, Math.PI, 0);
+    exMark.position.set(0, 0, 0.1);
+    warnRect.scale.set(1.4, 1.4, 1);
+  } else {
+    // 远程：红圈 + 黄色脉冲 + 弹道线，落点在命中轨道上玩家脚下（z=4）
+    const p = Math.min(1, el/BOSS_WARN_MS);
+    const pr = 2.2 + p*0.6;
+    rangeRing.scale.set(pr, pr, 1);
+    pulseRing.scale.set(pr*(1+0.4*Math.sin(el/120)), pr*(1+0.4*Math.sin(el/120)), 1);
+    pulseRing.material.opacity = 0.5+0.45*Math.sin(el/120);
+    warnGroup.position.set(targetLaneX, 0.3, PLAYER_Z);
+    // 弹道线：从 Boss 头到玩家脚下
+    const p0 = new THREE.Vector3(0, 22, 30);  // Boss 头位置
+    const p1 = new THREE.Vector3(targetLaneX, 1.0, PLAYER_Z);
+    beamGeo.setFromPoints([p0, p1]);
+  }
+
+  if (el >= BOSS_WARN_MS) {
+    resolveBossAttack();
+  }
+}
+
+function resolveBossAttack() {
+  warnGroup.visible = false;
+  // 对每个存活玩家判定
+  players.forEach(p => {
+    if (!p.active || !p.alive) return;
+    const onLane = p.lane === bossAttackLane;
+    let dmg = 0; let guarded = false; let countered = false;
+    if (bossAttackType === BOSS_ATTACK.MELEE) {
+      if (onLane) {
+        // 近战命中所在轨道
+        if (p.defending) { countered = true; }
+        else { dmg = BOSS_MELEE_DMG; }
+      }
+    } else {
+      // 远程：全轨道覆盖？不，按轨道判定。若玩家在命中轨道且未躲开
+      if (onLane) {
+        if (p.defending) { dmg = BOSS_RANGED_GUARDED; guarded = true; }
+        else { dmg = BOSS_RANGED_DMG; }
+      }
+    }
+    const v = new THREE.Vector3(p.baseX + p.lane*LANE_STEP, 2.2, PLAYER_Z);
+    if (dmg > 0) {
+      p.hp = Math.max(0, p.hp - dmg);
+      spawnFloat(v, `-${dmg}`, guarded?'#69f0ae':'#ff6b6b');
+    } else if (countered) {
+      bossHp = Math.max(0, bossHp - COUNTER_DMG);
+      spawnFloat(v, `反击! -${COUNTER_DMG}`, '#ffc107');
+      spawnFloat(new THREE.Vector3(0, 24, 32), `-${COUNTER_DMG}`, '#ffc107');
+      updateBossHp();
+    } else if (onLane && p.defending) {
+      // 远程防御减伤分支
+      spawnFloat(v, '挡住', '#4ec9ff');
+    }
+    updatePlayerHp(p);
+  });
+  bossAttackResolved = true;
+  // 检查胜利 / 全灭
+  if (bossHp <= 0) { setPhase(PHASE.VICTORY); return; }
+  const alive = players.filter(p=>p.active&&p.alive);
+  if (alive.length===0) { setPhase(PHASE.GAMEOVER); return; }
+  setPhase(PHASE.RESOLVE);
+}
+
+function updateResolve(dt, now) {
+  if (now - phaseStart > ROUND_END_MS) startRound();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Avatar 渲染（骨骼 → 3D）
+// ═══════════════════════════════════════════════════════════
+// 正面 2D 骨骼 (x:0..1, y:0..1) → 侧身 45° 3D 坐标
+// 映射：世界 X ≈ 镜面左/右（玩家右=屏幕右→镜像到形象），世界 Z = 朝向 Boss(纵深)
+function updateAvatar(p) {
+  const av = p.avatar;
+  const g = av.group;
+  // 玩家 X 坐标：基础位置 + 轨道偏移（lane * LANE_STEP）
+  const x = p.baseX + p.lane * LANE_STEP;
+  const y = 0;
+  const z = PLAYER_Z;
+  g.position.set(x, y, z);
+  // 玩家正面对 Boss（沿 +Z 方向看），不旋转 Y
+  g.rotation.y = 0;
+  // 身体倾斜：左右摆动（X 轴旋转）
+  g.rotation.z = p.lane * -0.18;
+  // 玩家轻微"抬"一点（脚离地）
+
+  // 核心判定点可见性（仅 Boss 攻击阶段）
+  av.core.visible = phase === PHASE.BOSS_ATTACK;
+  av.core.position.set(0, 1.0, 0.4);  // 胸口略前伸
+
+  // 动画状态
+  if (p.attackAnim) {
+    const mv = p.attackAnim.move;
+    const t = p.attackAnim.t;
+    if (MOVES[mv]?.type === 'attack') {
+      if (mv === MOVE.SCISSORS) {
+        // 右手前刺（向 +Z 方向），手臂从右肩伸出
+        setLimb(av.upperR, SHR, new THREE.Vector3(0.62,1.25,0.35));
+        setLimb(av.foreR,  new THREE.Vector3(0.62,1.25,0.35), new THREE.Vector3(0.68,1.25,1.15));
+        setLimb(av.upperL, SHL, new THREE.Vector3(-0.55,1.0,0.2));
+        setLimb(av.foreL,  new THREE.Vector3(-0.55,1.0,0.2), new THREE.Vector3(-0.65,0.78,0.35));
+      } else if (mv === MOVE.DRAGON) {
+        const up = Math.sin(Math.min(1,t/0.4)*Math.PI);
+        // 上勾：右拳向 +Z 上方冲天
+        setLimb(av.upperR, SHR, new THREE.Vector3(0.6,1.45+up*0.3,0.35));
+        setLimb(av.foreR,  new THREE.Vector3(0.6,1.45+up*0.3,0.35), new THREE.Vector3(0.55,1.95+up*0.5,0.5));
+        setLimb(av.upperL, SHL, new THREE.Vector3(-0.55,0.95,0.15));
+        setLimb(av.foreL,  new THREE.Vector3(-0.55,0.95,0.15), new THREE.Vector3(-0.7,0.68,0.2));
+      }
+      return;
+    }
+    if (MOVES[mv]?.type === 'guard') {
+      // 防御：双臂在胸前交叉成 X
+      setLimb(av.upperL, SHL, new THREE.Vector3(0.15,1.1,0.35));
+      setLimb(av.foreL,  new THREE.Vector3(0.15,1.1,0.35), new THREE.Vector3(-0.15,1.18,0.5));
+      setLimb(av.upperR, SHR, new THREE.Vector3(-0.15,1.1,0.35));
+      setLimb(av.foreR,  new THREE.Vector3(-0.15,1.1,0.35), new THREE.Vector3(0.15,1.18,0.5));
+      return;
+    }
+    if (MOVES[mv]?.type === 'pass') {
+      // 不出招：双手自然下垂
+      setLimb(av.upperL, SHL, new THREE.Vector3(-0.5,0.8,0.05));
+      setLimb(av.foreL,  new THREE.Vector3(-0.5,0.8,0.05), new THREE.Vector3(-0.55,0.5,0.05));
+      setLimb(av.upperR, SHR, new THREE.Vector3(0.5,0.8,0.05));
+      setLimb(av.foreR,  new THREE.Vector3(0.5,0.8,0.05), new THREE.Vector3(0.55,0.5,0.05));
+      return;
+    }
+  }
+
+  // 默认：身体直立，双手自然下垂在躯干两侧
+  setLimb(av.upperL, SHL, new THREE.Vector3(-0.52,0.68,0.05));
+  setLimb(av.foreL,  new THREE.Vector3(-0.52,0.68,0.05), new THREE.Vector3(-0.58,0.3,0.05));
+  setLimb(av.upperR, SHR, new THREE.Vector3(0.52,0.68,0.05));
+  setLimb(av.foreR,  new THREE.Vector3(0.52,0.68,0.05), new THREE.Vector3(0.58,0.3,0.05));
+}
+
+// ═══════════════════════════════════════════════════════════
+//  HUD 更新
+// ═══════════════════════════════════════════════════════════
+function updateBossHp() {
+  bossHpFill.style.width = (bossHp/MAX_HP_BOSS*100)+'%';
+  bossHpText.textContent = `${bossHp}/${MAX_HP_BOSS}`;
+}
+function updatePlayerHp(p) {
+  const h = HUD[p.index];
+  h.fill.style.width = (p.hp/MAX_HP_PLAYER*100)+'%';
+  h.hpText.textContent = p.hp;
+}
+function updateHud() {
+  players.forEach(p => {
+    const h = HUD[p.index];
+    h.el.classList.toggle('inactive', !p.active);
+    h.el.classList.toggle('dead', !p.alive);
+    // 状态文本
+    let st = '未就位';
+    let stCls = '';
+    if (p.active && p.alive) {
+      if (phase === PHASE.BOSS_ATTACK) {
+        if (p.defending) { st='🪨 防御'; stCls='guard'; }
+        else if (p.lane !== 0) { st = p.lane>0?'➡️ 右轨':'⬅️ 左轨'; stCls='dodge'; }
+        else { st='⚪ 中立'; }
+      } else if (phase === PHASE.SELECT) {
+        st = p.gesture ? (MOVES[p.gesture].icon+' '+MOVES[p.gesture].name) : '🕐 待摆招';
+        stCls = p.gesture!==null ? 'attack' : '';
+      } else {
+        st = '🎮';
+      }
+      if (p.combo.length >= COMBO_LEN) st = '✅ 锁定';
+    } else if (p.active && !p.alive) { st='💀 出局'; }
+    h.status.textContent = st;
+    h.status.className = 'p-status '+stCls;
+    // 组合槽
+    let comboHtml = '';
+    for (let i=0;i<COMBO_LEN;i++) {
+      const mv = p.combo[i];
+      comboHtml += `<span class="slot ${mv!==undefined?'filled':''}">${mv!==undefined?MOVE_ICONS[mv]:''}</span>`;
+    }
+    h.combo.innerHTML = comboHtml;
+  });
+}
+
+// ═══════════════════════════════════════════════════════════
+//  Canvas 2D 叠加层（倒计时环、充能环、核心标记辅助）
+// ═══════════════════════════════════════════════════════════
+function project(pos3) {
+  const v = pos3.clone().project(camera);
+  return { x:(v.x+1)/2*innerWidth, y:(-v.y+1)/2*innerHeight, visible: v.z<1 };
+}
+function drawOverlay() {
+  octx.clearRect(0,0,innerWidth,innerHeight);
+  if (phase === PHASE.SELECT) drawSelectRing();
+  if (phase === PHASE.BOSS_ATTACK) drawBossWarnRing();
+}
+function drawSelectRing() {
+  const el = performance.now() - phaseStart;
+  const remain = Math.max(0, (SELECT_MS-el)/1000);
+  const frac = 1 - el/SELECT_MS;
+  const r = 30;
+  const x = innerWidth-70, y = innerHeight-130;
+  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2); octx.strokeStyle='#ffffff33'; octx.lineWidth=6; octx.stroke();
+  octx.beginPath(); octx.arc(x,y,r,-Math.PI/2,-Math.PI/2+Math.PI*2*frac); octx.strokeStyle='#4ec9ff'; octx.lineWidth=6; octx.stroke();
+  octx.fillStyle='#fff'; octx.font='bold 18px sans-serif'; octx.textAlign='center'; octx.textBaseline='middle';
+  octx.fillText(remain.toFixed(1), x, y);
+}
+function drawBossWarnRing() {
+  const el = performance.now() - phaseStart;
+  const remain = Math.max(0, (BOSS_WARN_MS-el)/1000);
+  const frac = 1 - el/BOSS_WARN_MS;
+  const r = 30;
+  const x = innerWidth-70, y = innerHeight-130;
+  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2); octx.strokeStyle='#ffffff33'; octx.lineWidth=6; octx.stroke();
+  octx.beginPath(); octx.arc(x,y,r,-Math.PI/2,-Math.PI/2+Math.PI*2*frac); octx.strokeStyle='#ff6b6b'; octx.lineWidth=6; octx.stroke();
+  octx.fillStyle='#fff'; octx.font='bold 18px sans-serif'; octx.textAlign='center'; octx.textBaseline='middle';
+  octx.fillText(remain.toFixed(1), x, y);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  摄像头 / 启动
+// ═══════════════════════════════════════════════════════════
+async function setupCamera() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ video:{ width:{ideal:640}, height:{ideal:480}, facingMode:'user' }, audio:false });
+    cameraVideo.srcObject = stream;
+    await cameraVideo.play();
+    cameraActive = true;
+    await initPoseDetector();
+    detectPose();
+    cameraBtn.textContent = '🎥 摄像头已开启';
+    cameraBtn.classList.add('active');
+    cameraVideo.classList.add('on');
+  } catch(e) {
+    cameraBtn.textContent = '⚠️ 摄像头失败（演示模式运行）';
+    console.warn('camera error', e);
+    cameraActive = false;
+  }
+}
+function autoStartIfNeeded() {
+  if (activeCount>0 && phase===PHASE.WAITING) {
+    if (!DEMO && !cameraActive) return; // 非 demo 且无摄像头不自动开始
+    startGame();
+  }
+}
+cameraBtn.addEventListener('click', setupCamera);
+startBtn.addEventListener('click', () => {
+  if (!DEMO && !cameraActive) { setMessage('请先点击「开启摄像头」', true); return; }
+  if (!DEMO && activeCount === 0) { setMessage('请站到摄像头前，让全身入镜', true); return; }
+  startGame();
+});
+window.addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  overlay.width = innerWidth; overlay.height = innerHeight;
+});
+
+// ═══════════════════════════════════════════════════════════
+//  主循环
+// ═══════════════════════════════════════════════════════════
+overlay.width = innerWidth; overlay.height = innerHeight;
+let lastTime = performance.now();
+function loop(now) {
+  const dt = Math.min(0.05, (now-lastTime)/1000);
+  lastTime = now;
+
+  if (DEMO) demoPoses();
+  else if (!cameraActive) {
+    // 无摄像头时也尝试提供基本骨架（忽略）
+  }
+
+  // 每玩家手势采集
+  players.forEach(p => {
+    if (p.active && p.alive) {
+      if (p.lm) {
+        const g = classifyGesture(p.lm);
+        if (g !== null) {
+          if (p.gesture !== g) { p.gesture = g; p.gestureHoldStart = now; }
+        } else {
+          p.gesture = null; p.gestureHoldStart = 0;
+        }
+        // 倾斜仅在 Boss 攻击阶段采样
+        if (phase === PHASE.BOSS_ATTACK) p.lean = detectLean(p.lm);
+      }
+    }
+    // 更新虚拟形象
+    if (p.active) updateAvatar(p);
+  });
+
+  // 状态机
+  switch (phase) {
+    case PHASE.WAITING:
+      autoStartIfNeeded();
+      break;
+    case PHASE.SELECT: {
+      players.forEach(p => { if (p.active && p.alive) tryConfirmGesture(p, now); });
+      if (allLocked() || now - phaseStart >= SELECT_MS) finishSelect();
+      break;
+    }
+    case PHASE.EXECUTE: updateExecute(dt, now); break;
+    case PHASE.BOSS_ATTACK: updateBossAttack(dt, now); break;
+    case PHASE.RESOLVE: updateResolve(dt, now); break;
+    case PHASE.ROUND_END:
+      if (now - phaseStart > ROUND_END_MS) startRound();
+      break;
+    case PHASE.VICTORY:
+    case PHASE.GAMEOVER:
+      break;
+  }
+
+  updateHud();
+  drawPoseDebug();
+  updateFloats(dt);
+  drawOverlay();
+  renderer.render(scene, camera);
+  requestAnimationFrame(loop);
+}
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
