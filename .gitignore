@@ -1,13 +1,4 @@
-# 误操作产生的空目录
-/--directory/
-/-m/
-/8080/
-/copy/
-/http.server/
-/python/
-
-# 常见临时文件
+# 测试/临时产物
+playtest-screenshot.png
+*_shot1.png
 *.log
-.DS_Store
-Thumbs.db
-node_modules/

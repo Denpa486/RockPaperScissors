@@ -64,18 +64,15 @@
 
   #message-box { position: fixed; top: 46%; left: 50%; transform: translate(-50%,-50%); font-size: 26px; font-weight: 800; letter-spacing: 3px; color: #fff; text-align: center; z-index: 8; text-shadow: 0 0 24px rgba(0,0,0,0.9),0 2px 8px rgba(0,0,0,0.8); pointer-events: none; transition: opacity 0.3s; }
   #message-box.small { font-size: 15px; color: #ddd; letter-spacing: 1px; }
-  #camera-video { position: fixed; right: 14px; bottom: 190px; width: 180px; height: 135px; object-fit: cover; border-radius: 10px; border: 1px solid #ffffff33; background: #000; transform: scaleX(-1); opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 9; }
-  #camera-video.on { opacity: 0.9; }
+  #camera-video { position: fixed; left: 14px; top: 60px; width: 240px; height: 180px; object-fit: cover; border-radius: 10px; border: 1px solid #ffffff33; background: #000; transform: scaleX(-1); opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 9; }
+  #camera-video.on { opacity: 0.95; }
   #demo-hint { position: fixed; bottom: 84px; left: 14px; font-size: 11px; color: #888; z-index: 10; pointer-events: none; }
   #pose-debug { position: fixed; left: 12px; bottom: 64px; width: 248px; padding: 8px 10px; background: rgba(8,10,18,0.74); border: 1px solid #ffffff22; border-radius: 10px; z-index: 9; pointer-events: none; font-family: Consolas,'Courier New',monospace; display: none; }
   #pose-debug-title { font-size: 11px; color: #8be9fd; letter-spacing: 1px; font-weight: 700; margin-bottom: 2px; }
   #pose-debug-move { font-size: 16px; font-weight: 800; color: #fff; margin-bottom: 6px; }
   #pose-debug-canvas { display: block; width: 220px; height: 150px; margin: 0 auto 6px; }
   #pose-debug-coords { font-size: 10px; line-height: 1.55; color: #c3ccd8; white-space: pre; }
-  #help-panel { position: fixed; left: 14px; top: 60px; width: 212px; padding: 10px 12px; background: rgba(10,12,20,0.72); border: 1px solid #ffffff1f; border-radius: 10px; z-index: 9; pointer-events: none; }
-  #help-panel .h-title { font-size: 13px; font-weight: 800; color: #ffd166; margin-bottom: 6px; letter-spacing: 1px; }
-  #help-panel .h-row { font-size: 12px; color: #c9d1dc; line-height: 2; }
-  #help-panel .h-row b { color: #fff; font-weight: 700; }
+
 </style>
 </head>
 <body>
@@ -109,15 +106,6 @@
 <div id="message-box">点击「开始游戏」，或开启摄像头后自动开始</div>
 <div id="demo-hint">演示模式：加 ?demo 参数自动模拟</div>
 
-<div id="help-panel">
-  <div class="h-title">🎮 怎么玩</div>
-  <div class="h-row">✂️ <b>剪刀</b>：手臂前刺 · 1 伤</div>
-  <div class="h-row">🐉 <b>升龙拳</b>：手臂上勾 · 2 伤</div>
-  <div class="h-row">🪨 <b>石头</b>：双臂交叉 · 防御/反击</div>
-  <div class="h-row">🚫 <b>垂手</b>：不出招</div>
-  <div class="h-row">↔️ <b>身体侧倾</b>：换轨道躲闪</div>
-</div>
-
 <div id="pose-debug">
   <div id="pose-debug-title">🦴 骨骼捕捉</div>
   <div id="pose-debug-move">— 未识别</div>
@@ -125,11 +113,13 @@
   <div id="pose-debug-coords">未检测到骨骼</div>
 </div>
 
-<video id="camera-video" autoplay playsinline></video>
+<video id="camera-video" autoplay playsinline muted></video>
 
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" crossorigin="anonymous"></script>
 <script type="module">
 import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js';
-import { PoseLandmarker, FilesetResolver } from 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/+esm';
 
 // ═══════════════════════════════════════════════════════════
 //  常量与数据表
@@ -144,8 +134,8 @@ const BOSS_WARN_MS = 5000;
 const ROUND_END_MS = 2200;
 const GESTURE_HOLD_MS = 800;
 const RECONFIRM_MS = 1000;
-const LANE_STEP = 1.8; // = 轨道间距，倾斜一次正好切到下一条轨道
-const WORLD_SHIFT_X = 2.5; // 轨道组移到世界 +X（=屏幕左侧），Boss 留在世界中心（画面中央消失点）
+const LANE_STEP = 4.0; // = 轨道间距（加宽后），倾斜一次正好切到下一条轨道中心
+const WORLD_SHIFT_X = 1.5; // 轨道组中心在世界 +X（=屏幕左侧），Boss 留在世界中心（画面中央消失点）
 
 const MOVE = { STONE:0, SCISSORS:1, DRAGON:2, PASS:3 };
 const MOVES = {
@@ -162,6 +152,9 @@ const BOSS_MELEE_DMG = 3;
 const BOSS_RANGED_DMG = 2;
 const BOSS_RANGED_GUARDED = 1;
 const COUNTER_DMG = 1;
+const MELEE_RADIUS = 3.5;   // 近战预警矩形视觉半宽（5.0×1.4/2），攻击判定与画面完全一致
+const RANGED_RADIUS = 2.8;  // 远程预警红圈视觉外半径（1.0 × 2.8），攻击判定局限在圈内
+const DEFEND_MIN_FRAMES = 4; // 防御姿势需在预警期间累计至少 4 帧才判定有效，防抖动误判
 
 const PHASE = { WAITING:0, SELECT:1, EXECUTE:2, BOSS_ATTACK:3, RESOLVE:4, ROUND_END:5, GAMEOVER:6, VICTORY:7 };
 
@@ -185,6 +178,18 @@ const poseDebugMove = document.getElementById('pose-debug-move');
 const poseDebugCanvas = document.getElementById('pose-debug-canvas');
 const poseDebugCtx = poseDebugCanvas.getContext('2d');
 const poseDebugCoords = document.getElementById('pose-debug-coords');
+let poseModelInfo = '未加载';
+
+// 镜像输入 canvas：前置摄像头底层帧未镜像，MediaPipe 对自拍镜像帧识别更好
+const poseInputCanvas = document.createElement('canvas');
+poseInputCanvas.width = 640; poseInputCanvas.height = 480;
+const poseInputCtx = poseInputCanvas.getContext('2d');
+const POSE_CONNECTIONS = [
+  [0,1],[1,2],[2,3],[3,7],[0,4],[4,5],[5,6],[6,8],[9,10],
+  [11,12],[11,13],[13,15],[15,17],[15,19],[15,21],[17,19],
+  [12,14],[14,16],[16,18],[16,20],[16,22],[18,20],
+  [11,23],[12,24],[23,24]
+];
 
 // ═══════════════════════════════════════════════════════════
 //  Three.js 场景
@@ -227,15 +232,16 @@ ground.receiveShadow = true;
 scene.add(ground);
 
 // 道路：比三条轨道更宽的深色沥青带，整体左移到 WORLD_SHIFT_X（4 人时外侧玩家也能站上路面）
-const road = new THREE.Mesh(new THREE.PlaneGeometry(7.6, 46), new THREE.MeshStandardMaterial({ color:0x1b1b2a, roughness:0.9 }));
+const TRACK_W = 3.8;
+const ROAD_W = 13.0;
+const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, 46), new THREE.MeshStandardMaterial({ color:0x1b1b2a, roughness:0.9 }));
 road.rotation.x = -Math.PI/2;
 road.position.set(WORLD_SHIFT_X, 0.01, 17);
 road.receiveShadow = true;
 scene.add(road);
 
 // 三条轨道：中灰跑道 + 亮黄边界线 + 前进箭头，加宽并左移，保证画面内三条轨道肉眼可辨
-const TRACK_X = [-1.8, 0, 1.8].map(x => x + WORLD_SHIFT_X);
-const TRACK_W = 1.7;
+const TRACK_X = [-LANE_STEP, 0, LANE_STEP].map(x => x + WORLD_SHIFT_X);
 const laneMat = new THREE.MeshStandardMaterial({ color:0x3c3c56, roughness:0.65, metalness:0.12 });
 const yellow = new THREE.MeshBasicMaterial({ color:0xffd000 });
 for (const x of TRACK_X) {
@@ -246,8 +252,9 @@ for (const x of TRACK_X) {
   scene.add(s);
 }
 // 轨道边界/分隔亮黄实线（3 条轨道 → 左右外侧各 1 条 + 中间分隔 2 条）
-for (const x of [-2.65, -0.9, 0.9, 2.65].map(x => x + WORLD_SHIFT_X)) {
-  const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.09, 46), yellow);
+const LINE_X = [-(LANE_STEP + TRACK_W/2), -LANE_STEP/2, LANE_STEP/2, LANE_STEP + TRACK_W/2].map(x => x + WORLD_SHIFT_X);
+for (const x of LINE_X) {
+  const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 46), yellow);
   ln.rotation.x = -Math.PI/2;
   ln.position.set(x, 0.04, 17);
   scene.add(ln);
@@ -315,6 +322,71 @@ function makeTextSprite(text, fontSize, color) {
   const tex = new THREE.CanvasTexture(c);
   return new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false }));
 }
+
+// ── 轨道右侧 3D 告示牌（怎么玩）──
+function createSignTexture() {
+  const c = document.createElement('canvas');
+  c.width = 1024; c.height = 1280;
+  const g = c.getContext('2d');
+  // 底板：保持较暗背景不变
+  g.fillStyle = '#161824';
+  g.fillRect(0,0,c.width,c.height);
+  // 边框：更亮的金黄
+  g.lineWidth = 24; g.strokeStyle = '#ffdd77'; g.strokeRect(18,18,c.width-36,c.height-36);
+  // 标题背景
+  g.fillStyle = '#222436'; g.fillRect(40,40,c.width-80,160);
+  // 标题：亮度提高
+  g.font = 'bold 96px "Segoe UI", "Microsoft YaHei", sans-serif';
+  g.textAlign = 'center'; g.textBaseline = 'middle';
+  g.fillStyle = '#ffeebb'; g.fillText('🎮 怎么玩', c.width/2, 120);
+  // 内容
+  const rows = [
+    { icon:'✂️', title:'剪刀', desc:'手臂前刺 · 1 伤', color:'#7fffb3' },
+    { icon:'🐉', title:'升龙拳', desc:'手臂上勾 · 2 伤', color:'#ffd84d' },
+    { icon:'🪨', title:'石头', desc:'双臂交叉 · 防御/反击', color:'#6fd3ff' },
+    { icon:'🚫', title:'垂手', desc:'不出招', color:'#a78bfa' },
+    { icon:'↔️', title:'身体侧倾', desc:'换轨道躲闪', color:'#ff8585' },
+  ];
+  let y = 280;
+  for (const row of rows) {
+    g.font = 'bold 72px "Segoe UI", "Microsoft YaHei", sans-serif';
+    g.textAlign = 'left'; g.textBaseline = 'middle';
+    g.fillStyle = row.color;
+    g.fillText(`${row.icon} ${row.title}`, 80, y);
+    g.font = '46px "Segoe UI", "Microsoft YaHei", sans-serif';
+    g.fillStyle = '#f0f4fa'; // 提高描述文字亮度
+    g.fillText(row.desc, 80, y+82);
+    y += 210;
+  }
+  // 底部提示
+  g.font = '40px "Segoe UI", "Microsoft YaHei", sans-serif';
+  g.textAlign = 'center'; g.fillStyle = '#b0c4de';
+  g.fillText('请退后一步，让全身入镜', c.width/2, c.height-70);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+function createSignBoard() {
+  const W = 4.2, H = 5.6, D = 0.35;
+  const frameMat = new THREE.MeshStandardMaterial({ color:0x3a3a4a, roughness:0.7, metalness:0.2 });
+  // 正面自发光材质：背景保持暗色但文字更亮
+  const faceMat = new THREE.MeshStandardMaterial({
+    map:createSignTexture(), roughness:0.6, metalness:0.05,
+    emissive:0x111320, emissiveMap:createSignTexture(), emissiveIntensity:0.35
+  });
+  const materials = [frameMat, frameMat, frameMat, frameMat, faceMat, frameMat]; // +Z 面为正面
+  const board = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), materials);
+  board.castShadow = true; board.receiveShadow = true;
+  // 移到玩家面前（z=5 附近），便于开始阅读玩法
+  board.position.set(WORLD_SHIFT_X - LANE_STEP - TRACK_W/2 - 2.4, H/2 + 0.1, 5);
+  board.lookAt(WORLD_SHIFT_X, H/2, 1);
+  scene.add(board);
+  // 底座
+  const base = new THREE.Mesh(new THREE.BoxGeometry(W+0.4, 0.2, D+0.8), frameMat);
+  base.position.set(0, 0.1, 0); board.add(base);
+  return board;
+}
+const signBoard = createSignBoard();
 
 // 漂浮伤害
 const floatPool = [];
@@ -401,13 +473,13 @@ function oeFilter(key, val, t) {
   s.lastT = t;
   return s.hatX;
 }
-function applyFilter(raw) {
+function applyFilter(raw, mirrorX=false) {
   const t = performance.now();
-  const out = raw.map(p => ({ x:p.x, y:p.y, visibility:p.visibility }));
+  const out = raw.map(p => ({ x: mirrorX ? (1-p.x) : p.x, y:p.y, visibility:p.visibility }));
   for (const idx of ACTIVE_KP) for (const axis of ['x','y']) {
     const key = `${idx}_${axis}`;
-    if (!OE.states[key]) OE.states[key] = { hatX:raw[idx][axis], dx:0, lastT:t };
-    else out[idx][axis] = oeFilter(key, raw[idx][axis], t);
+    if (!OE.states[key]) OE.states[key] = { hatX:out[idx][axis], dx:0, lastT:t };
+    else out[idx][axis] = oeFilter(key, out[idx][axis], t);
   }
   return out;
 }
@@ -425,23 +497,21 @@ function applySymmetry(lm) {
   if (uL>0.001 && uR>0.001) { const av=(uL+uR)/2; scaleBone(lm[KP.L_SHOULDER],lm[KP.L_ELBOW],av); scaleBone(lm[KP.R_SHOULDER],lm[KP.R_ELBOW],av); }
   if (fL>0.001 && fR>0.001) { const av=(fL+fR)/2; scaleBone(lm[KP.L_ELBOW],lm[KP.L_WRIST],av); scaleBone(lm[KP.R_ELBOW],lm[KP.R_WRIST],av); }
 }
-function pipeline(raw) { const f = applyFilter(raw); applySymmetry(f); return f; }
+function pipeline(raw, mirrorX=false) {
+  const f = applyFilter(raw, mirrorX).map(p => ({ x:p.x, y:p.y, visibility: typeof p.visibility==='number' ? p.visibility : 0 }));
+  applySymmetry(f); return f;
+}
 
 // ═══════════════════════════════════════════════════════════
 //  手势分类
 // ═══════════════════════════════════════════════════════════
-function segIntersect(p1,p2,p3,p4) {
-  const o = (a,b,c) => (b.x-a.x)*(c.y-a.y) - (b.y-a.y)*(c.x-a.x);
-  const d1=o(p3,p4,p1), d2=o(p3,p4,p2), d3=o(p1,p2,p3), d4=o(p1,p2,p4);
-  return ((d1>0&&d2<0)||(d1<0&&d2>0)) && ((d3>0&&d4<0)||(d3<0&&d4>0));
-}
 function classifyGesture(lm) {
   if (!lm) return null;
   const P = i => ({ x:lm[i].x, y:lm[i].y, v:lm[i].visibility });
   const lS=P(KP.L_SHOULDER), rS=P(KP.R_SHOULDER);
   const lE=P(KP.L_ELBOW), rE=P(KP.R_ELBOW);
   const lW=P(KP.L_WRIST), rW=P(KP.R_WRIST);
-  const minVis=0.55;
+  const minVis=0.25;
   if (lS.v<minVis || rS.v<minVis) return null;
   const sw = Math.abs(rS.x-lS.x);
   if (sw < 0.05) return null;
@@ -452,12 +522,11 @@ function classifyGesture(lm) {
 
   // 升龙
   if ((lW.v>minVis && lW.y < noseY-0.03) || (rW.v>minVis && rW.y < noseY-0.03)) return MOVE.DRAGON;
-  // 石头：小臂 X 交叉
-  if (lE.v>minVis && lW.v>minVis && rE.v>minVis && rW.v>minVis) {
-    if (segIntersect(lE,lW,rE,rW)) {
-      const inChest = (lW.y>neckY+0.02 && lW.y<hipY-0.03) || (rW.y>neckY+0.02 && rW.y<hipY-0.03);
-      if (inChest) return MOVE.STONE;
-    }
+  // 石头/防御：双手在胸前靠拢（不必严格交叉，只要双腕靠近且位于胸口区域）
+  if (lW.v>minVis && rW.v>minVis) {
+    const wDist = Math.hypot(lW.x-rW.x, lW.y-rW.y);
+    const wMidY = (lW.y+rW.y)/2;
+    if (wDist < sw*0.95 && wMidY > neckY-0.02 && wMidY < hipY-0.02) return MOVE.STONE;
   }
   // 剪刀：手臂水平前伸
   const stab = (w,e,s,side) => (w.v>minVis && e.v>minVis) && (side==='left'? w.x<e.x-0.03 : w.x>e.x+0.03) && Math.abs(w.y-s.y)<0.16;
@@ -469,13 +538,13 @@ function classifyGesture(lm) {
 function detectLean(lm) {
   if (!lm) return 0;
   const lS=lm[KP.L_SHOULDER], rS=lm[KP.R_SHOULDER], nose=lm[KP.NOSE];
-  if (lS.visibility<0.5 || rS.visibility<0.5) return 0;
+  if (lS.visibility<0.25 || rS.visibility<0.25) return 0;
   const midX=(lS.x+rS.x)/2;
   const sw=Math.abs(rS.x-lS.x)||0.1;
-  const nX=(nose && nose.visibility>0.4)?nose.x:midX;
+  const nX=(nose && nose.visibility>0.2)?nose.x:midX;
   const off=(nX-midX)/sw;
-  if (off>0.42) return 1;
-  if (off<-0.42) return -1;
+  if (off>0.32) return 1;
+  if (off<-0.32) return -1;
   return 0;
 }
 
@@ -487,49 +556,53 @@ let activeCount = 0;
 function createPlayerState(index) {
   const av = createAvatar();
   scene.add(av.group);
-  return { index, active:false, alive:true, inited:false, hp:MAX_HP_PLAYER, combo:[], gesture:null, gestureHoldStart:0, lastConfirm:0, lean:0, leanSmooth:0, lane:0, defending:false, defendFrames:0, baseX:0, attackAnim:null, avatar:av, lm:null, colors:PLAYER_STYLES[index] };
+  return { index, active:false, alive:true, inited:false, hp:MAX_HP_PLAYER, combo:[], gesture:null, gestureHoldStart:0, lastConfirm:0, lean:0, leanSmooth:0, lane:0, targetLane:0, laneSmooth:0, defending:false, defendFrames:0, baseX:WORLD_SHIFT_X, attackAnim:null, avatar:av, lm:null, colors:PLAYER_STYLES[index] };
 }
-// 三条轨道的 x 偏移（左=-1.8, 中=0, 右=+1.8），整体左移 WORLD_SHIFT_X，多个玩家均匀分布在三条轨道上
-const LANE_X = [-1.8, 0, 1.8].map(x => x + WORLD_SHIFT_X);
+// 三条轨道的 x 坐标（左=-LANE_STEP, 中=0, 右=+LANE_STEP），整体左移 WORLD_SHIFT_X
+const LANE_X = [-LANE_STEP, 0, LANE_STEP].map(x => x + WORLD_SHIFT_X);
 const LANE_LAYOUT = {
   1: [0],
-  2: [-1.8, 1.8],
-  3: [-1.8, 0, 1.8],
-  4: [-2.7, -0.9, 0.9, 2.7], // 4 人时扩展到轨道的边界
+  2: [-LANE_STEP, LANE_STEP],
+  3: [-LANE_STEP, 0, LANE_STEP],
+  4: [-1.5*LANE_STEP, -0.5*LANE_STEP, 0.5*LANE_STEP, 1.5*LANE_STEP],
 };
 const PLAYER_Z = 4; // 玩家在 z=4（脚下区域中部，离摄像机近）
 function layoutPlayers() {
-  const xs = LANE_LAYOUT[Math.max(1,activeCount)] || LANE_LAYOUT[4];
-  players.forEach((p,i) => p.baseX = (xs[i] ?? xs[xs.length-1]) + WORLD_SHIFT_X);
+  // 所有玩家都以轨道组中心为基准，不再用 LANE_LAYOUT 做固定横向分配；
+  // 实际站位由 updatePlayerLaneFromPose() 每帧根据肩膀位置动态决定，确保永远站在某条轨道中心。
+  players.forEach(p => p.baseX = WORLD_SHIFT_X);
 }
 
 // ═══════════════════════════════════════════════════════════
-//  MediaPipe
+//  MediaPipe (legacy Pose + camera_utils)
 // ═══════════════════════════════════════════════════════════
-let poseLandmarker = null;
+let poseSolution = null;
 let cameraActive = false;
 let lastVideoTime = -1;
 let lastPoses = [];
 
 async function initPoseDetector() {
-  const vision = await FilesetResolver.forVisionTasks('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.18/wasm');
-  const models = [
-    { name:'full', url:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/1/pose_landmarker_full.task' },
-    { name:'lite', url:'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task' },
-  ];
-  let lastErr = null;
-  for (const m of models) {
-    try {
-      poseLandmarker = await PoseLandmarker.createFromOptions(vision, {
-        baseOptions:{ modelAssetPath:m.url, delegate:'GPU' },
-        runningMode:'VIDEO', numPoses:MAX_PLAYERS,
-        minPoseDetectionConfidence:0.5, minPosePresenceConfidence:0.5, minTrackingConfidence:0.5,
-      });
-      console.log(`[Pose] 模型加载成功: ${m.name} 多人×${MAX_PLAYERS}`);
-      return;
-    } catch(e){ console.warn('[Pose]', m.name, '失败', e.message); lastErr = e; }
-  }
-  throw lastErr || new Error('模型加载失败');
+  poseSolution = new window.Pose({
+    locateFile: file => `https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/${file}`
+  });
+  poseSolution.setOptions({
+    modelComplexity: 1,
+    smoothLandmarks: true,
+    enableSegmentation: false,
+    minDetectionConfidence: 0.4,
+    minTrackingConfidence: 0.4,
+    selfieMode: true,
+  });
+  poseSolution.onResults(onPoseResults);
+  poseModelInfo = 'legacy pose / selfie';
+  console.log('[Pose] legacy Pose 初始化完成，selfieMode=true');
+}
+
+function onPoseResults(results) {
+  const landmarks = results.poseLandmarks;
+  lastPoses = landmarks ? [landmarks] : [];
+  distributePoses(lastPoses);
+  drawPoseOnCamera(landmarks);
 }
 
 function distributePoses(poses) {
@@ -537,28 +610,66 @@ function distributePoses(poses) {
   for (let i=0;i<MAX_PLAYERS;i++) {
     if (!players[i]) players[i] = createPlayerState(i);
     players[i].active = i<n;
-    players[i].lm = i<n ? pipeline(poses[i]) : null;
+    players[i].lm = i<n ? pipeline(poses[i], false) : null;
   }
   if (n !== activeCount) { activeCount = n; layoutPlayers(); players.forEach((p,i)=>{ if(i<n) p.inited=true; }); }
 }
-async function detectPose() {
-  if (!poseLandmarker || !cameraActive) return;
-  const now = performance.now();
-  if (cameraVideo.readyState>=2 && cameraVideo.currentTime !== lastVideoTime) {
-    lastVideoTime = cameraVideo.currentTime;
-    try {
-      const r = poseLandmarker.detectForVideo(cameraVideo, now);
-      const poses = r.poseLandmarks || [];
-      poses.sort((a,b) => ((a[KP.L_SHOULDER].x+a[KP.R_SHOULDER].x)/2) - ((b[KP.L_SHOULDER].x+b[KP.R_SHOULDER].x)/2));
-      lastPoses = poses;
-      distributePoses(poses);
-    } catch(e){}
-  }
-  requestAnimationFrame(detectPose);
+
+// 根据肩中点在画面中的水平位置，把玩家映射到最近的轨道，保证 avatar 永远站在轨道中心
+function updatePlayerLaneFromPose(p) {
+  if (!p || !p.lm || !p.active) return;
+  const lS = p.lm[KP.L_SHOULDER], rS = p.lm[KP.R_SHOULDER];
+  if (!lS || !rS || (lS.visibility<0.2 && rS.visibility<0.2)) return;
+  const shoulderX = (lS.x + rS.x) / 2;
+  const worldX = WORLD_SHIFT_X + (0.5 - shoulderX) * LANE_STEP * 2.2;
+  const lane = Math.round((worldX - WORLD_SHIFT_X) / LANE_STEP);
+  p.targetLane = Math.max(-1, Math.min(1, lane));
+  p.laneSmooth = (p.laneSmooth || 0) + (p.targetLane - (p.laneSmooth || 0)) * 0.18;
+  p.lane = Math.round(p.laneSmooth);
+}
+
+// 在摄像头预览画面上叠加骨骼连线
+const cameraOverlayCanvas = document.createElement('canvas');
+cameraOverlayCanvas.width = 640; cameraOverlayCanvas.height = 480;
+cameraOverlayCanvas.style.position = 'fixed';
+cameraOverlayCanvas.style.left = '14px';
+cameraOverlayCanvas.style.top = '60px';
+cameraOverlayCanvas.style.width = '240px';
+cameraOverlayCanvas.style.height = '180px';
+cameraOverlayCanvas.style.borderRadius = '10px';
+cameraOverlayCanvas.style.pointerEvents = 'none';
+cameraOverlayCanvas.style.zIndex = '9';
+cameraOverlayCanvas.style.transform = 'scaleX(-1)';
+document.body.appendChild(cameraOverlayCanvas);
+const cameraOverlayCtx = cameraOverlayCanvas.getContext('2d');
+
+function drawPoseOnCamera(landmarks) {
+  const ctx = cameraOverlayCtx;
+  const w = cameraOverlayCanvas.width, h = cameraOverlayCanvas.height;
+  ctx.clearRect(0,0,w,h);
+  if (!landmarks || !landmarks.length) return;
+  window.drawConnectors(ctx, landmarks, POSE_CONNECTIONS, { color:'#00ff88', lineWidth:3 });
+  window.drawLandmarks(ctx, landmarks, { color:'#ff3366', lineWidth:2, radius:5 });
+  const upperIdx = [0,11,12,13,14,15,16];
+  const pts = upperIdx.filter(i=>landmarks[i]).map(i=>landmarks[i]);
+  window.drawLandmarks(ctx, pts, { color:'#ffd166', lineWidth:2, radius:6 });
+}
+
+async function startPoseCamera() {
+  if (!poseSolution) await initPoseDetector();
+  const camera = new window.Camera(cameraVideo, {
+    onFrame: async () => { await poseSolution.send({ image: cameraVideo }); },
+    width: 640, height: 480
+  });
+  await camera.start();
+  cameraActive = true;
+  cameraVideo.classList.add('on');
+  poseModelInfo = 'legacy pose / selfie';
 }
 
 // 演示模式
 const DEMO = new URLSearchParams(location.search).has('demo');
+if (DEMO) poseModelInfo = 'demo / 模拟';
 function demoMoveFor(i, t) {
   // 每个玩家周期性切换攻击/防御手势
   const cycle = 4; // 4 秒一个手势循环，足够保持选中
@@ -575,16 +686,15 @@ function demoPoses() {
   const fake = [];
   for (let i=0;i<n;i++) {
     const sw=0.14;
-    // 玩家 i 的基础屏幕 X 偏移对应世界 X
-    // 世界 x=-2.2→0.42, x=0→0.5, x=2.2→0.58
-    const baseOff = bases[i] / 8;  // 调整映射系数
+    // 玩家 i 的基础屏幕 X 偏移对应世界 X；LANE_STEP 变大后减小映射系数，避免越界
+    const baseOff = bases[i] / 16;
     // Boss 阶段每个玩家轮流切换轨道
     let laneOff = 0;
     if (phase === PHASE.BOSS_ATTACK) {
       const lanePhase = ((t + i*1.1) % 6) / 6;
       laneOff = lanePhase < 0.3 ? 0 : (lanePhase < 0.65 ? 1 : -1);
     }
-    const midX = 0.5 + baseOff + laneOff*0.085;
+    const midX = 0.5 + baseOff + laneOff*0.045;
     const m = demoMoveFor(i, t);
     // Boss 阶段玩家尽量摆防御（石头），让反击/减伤发生
     const gesture = (phase === PHASE.BOSS_ATTACK && i===0) ? MOVE.STONE : m;
@@ -615,7 +725,9 @@ function drawPoseDebug() {
   const p = players[0];
   const ctx = poseDebugCtx;
   const cw = poseDebugCanvas.width, ch = poseDebugCanvas.height;
-  ctx.clearRect(0, 0, cw, ch);
+  // 用不透明深色填充，避免空画布显示成透明棋盘格
+  ctx.fillStyle = 'rgba(12,16,26,0.85)';
+  ctx.fillRect(0, 0, cw, ch);
 
   const g = p && p.lm ? p.gesture : null;
   poseDebugMove.textContent =
@@ -625,8 +737,15 @@ function drawPoseDebug() {
     g === MOVE.PASS ? '🚫 不出招' : '— 未识别';
 
   const lm = p ? p.lm : null;
-  if (!lm || lm[KP.L_SHOULDER].visibility < 0.3) {
-    poseDebugCoords.textContent = '未检测到骨骼';
+  if (!lm || lm[KP.L_SHOULDER].visibility < 0.2) {
+    const hint = cameraActive
+      ? `正在检测…\n模型:${poseModelInfo}\n已检出:${lastPoses.length}人\n请正对摄像头，退后一步让全身入镜`
+      : '未检测到骨骼';
+    poseDebugCoords.textContent = hint;
+    ctx.fillStyle = '#667080';
+    ctx.font = '12px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(hint.split('\n')[0], cw / 2, ch / 2);
     return;
   }
 
@@ -671,14 +790,16 @@ function drawPoseDebug() {
   const off = sw > 0.05 ? (nose.x - midX) / sw : 0;
   const wristDist = Math.hypot(lW.x - rW.x, lW.y - rW.y);
   const lane = p ? p.lane : 0;
+  const targetLane = p ? p.targetLane : 0;
   const f2 = v => (v ?? 0).toFixed(2);
   poseDebugCoords.textContent =
 `鼻 (${f2(nose.x)},${f2(nose.y)})  颈 (${f2(neck.x)},${f2(neck.y)})
 左肩(${f2(lS.x)},${f2(lS.y)}) 右肩(${f2(rS.x)},${f2(rS.y)})
 左肘(${f2(lE.x)},${f2(lE.y)}) 右肘(${f2(rE.x)},${f2(rE.y)})
 左腕(${f2(lW.x)},${f2(lW.y)}) 右腕(${f2(rW.x)},${f2(rW.y)})
-lean ${f2(off)} | lane ${lane} | 肩宽 ${f2(sw)}
-双腕距 ${f2(wristDist)}`;
+lean ${f2(off)} | lane ${lane}(目标${targetLane}) | 肩宽 ${f2(sw)}
+双腕距 ${f2(wristDist)} | 检出:${lastPoses.length}人
+模型 ${poseModelInfo}`;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -739,7 +860,7 @@ function tryConfirmGesture(p, now) {
       const r = Math.sin(now/400 + p.index*3) > 0 ? MOVE.SCISSORS : MOVE.DRAGON;
       p.combo.push(r);
       p.lastConfirm = now;
-      spawnFloat(new THREE.Vector3(p.baseX + p.leanSmooth*LANE_STEP, 3.2, 12), `${MOVE_ICONS[r]} 已选`, '#ffffff');
+      spawnFloat(new THREE.Vector3(WORLD_SHIFT_X + p.laneSmooth*LANE_STEP, 3.2, 12), `${MOVE_ICONS[r]} 已选`, '#ffffff');
     }
     return;
   }
@@ -749,7 +870,7 @@ function tryConfirmGesture(p, now) {
   if (now - p.gestureHoldStart >= GESTURE_HOLD_MS) {
     p.combo.push(p.gesture);
     p.lastConfirm = now; p.gestureHoldStart = 0;
-    spawnFloat(new THREE.Vector3(p.baseX + p.leanSmooth*LANE_STEP, 3.2, 12), `${MOVE_ICONS[p.gesture]} 已选`, '#ffffff');
+    spawnFloat(new THREE.Vector3(WORLD_SHIFT_X + p.laneSmooth*LANE_STEP, 3.2, 12), `${MOVE_ICONS[p.gesture]} 已选`, '#ffffff');
   }
 }
 function allLocked() {
@@ -828,10 +949,14 @@ function updateBossAttack(dt, now) {
       const isGuard = g === MOVE.STONE;
       if (isGuard) { p.defending = true; p.defendFrames++; }
       else { p.defending = false; p.defendFrames = 0; }
-      p.lean = detectLean(lm);
+      // Boss 阶段同时根据头部/肩部偏移做最终 lean 修正，与位置检测叠加但允许小幅摆头躲闪
+      const headLean = detectLean(lm);
+      p.lean = headLean;
     }
     p.leanSmooth += (p.lean - p.leanSmooth)*Math.min(1, dt*6);
-    p.lane = Math.round(p.leanSmooth);
+    // lane 取位置检测的目标 lane + 头部躲闪修正
+    const headLaneOffset = Math.round(p.leanSmooth);
+    p.lane = Math.max(-1, Math.min(1, (p.targetLane || 0) + headLaneOffset));
   });
 
   // 预警可视化
@@ -868,25 +993,29 @@ function updateBossAttack(dt, now) {
 
 function resolveBossAttack() {
   warnGroup.visible = false;
+  const targetLaneX = LANE_X[bossAttackLane + 1];
+  // 判定半径与预警可视化完全一致：近战=矩形半宽，远程=红圈外半径
+  const radius = bossAttackType === BOSS_ATTACK.MELEE ? MELEE_RADIUS : RANGED_RADIUS;
   // 对每个存活玩家判定
   players.forEach(p => {
     if (!p.active || !p.alive) return;
-    const onLane = p.lane === bossAttackLane;
+    const playerX = WORLD_SHIFT_X + p.lane * LANE_STEP;
+    // 几何判定：玩家是否位于预警圈/框内（圈外完全不受伤害）
+    const inZone = Math.abs(playerX - targetLaneX) <= radius;
+    const defended = p.defendFrames >= DEFEND_MIN_FRAMES;
     let dmg = 0; let guarded = false; let countered = false;
-    if (bossAttackType === BOSS_ATTACK.MELEE) {
-      if (onLane) {
-        // 近战命中所在轨道
-        if (p.defending) { countered = true; }
+    if (inZone) {
+      if (bossAttackType === BOSS_ATTACK.MELEE) {
+        // 近战：防御 → 反弹伤害给 Boss，玩家不受伤
+        if (defended) { countered = true; }
         else { dmg = BOSS_MELEE_DMG; }
-      }
-    } else {
-      // 远程：全轨道覆盖？不，按轨道判定。若玩家在命中轨道且未躲开
-      if (onLane) {
-        if (p.defending) { dmg = BOSS_RANGED_GUARDED; guarded = true; }
+      } else {
+        // 远程：命中即掉血，不可反击；防御只能减伤
+        if (defended) { dmg = BOSS_RANGED_GUARDED; guarded = true; }
         else { dmg = BOSS_RANGED_DMG; }
       }
     }
-    const v = new THREE.Vector3(p.baseX + p.lane*LANE_STEP, 2.2, PLAYER_Z);
+    const v = new THREE.Vector3(playerX, 2.2, PLAYER_Z);
     if (dmg > 0) {
       p.hp = Math.max(0, p.hp - dmg);
       spawnFloat(v, `-${dmg}`, guarded?'#69f0ae':'#ff6b6b');
@@ -895,8 +1024,8 @@ function resolveBossAttack() {
       spawnFloat(v, `反击! -${COUNTER_DMG}`, '#ffc107');
       spawnFloat(new THREE.Vector3(0, 24, 32), `-${COUNTER_DMG}`, '#ffc107');
       updateBossHp();
-    } else if (onLane && p.defending) {
-      // 远程防御减伤分支
+    } else if (inZone && defended) {
+      // 远程防御减伤已通过 dmg 分支处理；此处仅兜底显示
       spawnFloat(v, '挡住', '#4ec9ff');
     }
     updatePlayerHp(p);
@@ -921,8 +1050,9 @@ function updateResolve(dt, now) {
 function updateAvatar(p) {
   const av = p.avatar;
   const g = av.group;
-  // 玩家 X 坐标：基础位置 + 轨道偏移（lane * LANE_STEP）
-  const x = p.baseX + p.lane * LANE_STEP;
+  // 玩家 X 坐标：轨道组中心 + 轨道偏移。
+  // lane ∈ {-1,0,1}，乘 LANE_STEP（= 轨道间距）后正好落在相邻轨道中心。
+  const x = WORLD_SHIFT_X + p.lane * LANE_STEP;
   const y = 0;
   const z = PLAYER_Z;
   g.position.set(x, y, z);
@@ -1067,15 +1197,10 @@ function drawBossWarnRing() {
 // ═══════════════════════════════════════════════════════════
 async function setupCamera() {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video:{ width:{ideal:640}, height:{ideal:480}, facingMode:'user' }, audio:false });
-    cameraVideo.srcObject = stream;
-    await cameraVideo.play();
-    cameraActive = true;
-    await initPoseDetector();
-    detectPose();
+    cameraVideo.muted = true;
+    await startPoseCamera();
     cameraBtn.textContent = '🎥 摄像头已开启';
     cameraBtn.classList.add('active');
-    cameraVideo.classList.add('on');
   } catch(e) {
     cameraBtn.textContent = '⚠️ 摄像头失败（演示模式运行）';
     console.warn('camera error', e);
@@ -1091,7 +1216,7 @@ function autoStartIfNeeded() {
 cameraBtn.addEventListener('click', setupCamera);
 startBtn.addEventListener('click', () => {
   if (!DEMO && !cameraActive) { setMessage('请先点击「开启摄像头」', true); return; }
-  if (!DEMO && activeCount === 0) { setMessage('请站到摄像头前，让全身入镜', true); return; }
+  if (!DEMO && activeCount === 0) { setMessage('请站到摄像头前，让上半身入镜', true); return; }
   startGame();
 });
 window.addEventListener('resize', () => {
@@ -1114,8 +1239,12 @@ function loop(now) {
     // 无摄像头时也尝试提供基本骨架（忽略）
   }
 
-  // 每玩家手势采集
+  // 每玩家手势采集 + 实时位置匹配
   players.forEach(p => {
+    if (p.active) {
+      // 每次检测都根据人体位置重新匹配轨道，保证 avatar 始终位于轨道中心
+      updatePlayerLaneFromPose(p);
+    }
     if (p.active && p.alive) {
       if (p.lm) {
         const g = classifyGesture(p.lm);
@@ -1124,7 +1253,7 @@ function loop(now) {
         } else {
           p.gesture = null; p.gestureHoldStart = 0;
         }
-        // 倾斜仅在 Boss 攻击阶段采样
+        // 倾斜仅在 Boss 攻击阶段采样；其余阶段位置由 updatePlayerLaneFromPose 控制
         if (phase === PHASE.BOSS_ATTACK) p.lean = detectLean(p.lm);
       }
     }
