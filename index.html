@@ -97,6 +97,21 @@
   #pose-debug-canvas { display: block; width: 220px; height: 150px; margin: 0 auto 6px; }
   #pose-debug-coords { font-size: 10px; line-height: 1.55; color: #c3ccd8; white-space: pre; }
 
+  /* 开发者面板 */
+  #dev-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: min(420px, 92vw); max-height: 84vh; overflow-y: auto; background: rgba(10,12,22,0.96); border: 1px solid #4ec9ff55; border-radius: 14px; padding: 14px 16px; z-index: 200; display: none; box-shadow: 0 0 40px rgba(0,0,0,0.8); }
+  #dev-panel.open { display: block; }
+  #dev-panel .dev-head { font-size: 17px; font-weight: 800; color: #4ec9ff; letter-spacing: 2px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  #dev-panel .dev-key-hint { font-size: 10px; color: #889; font-weight: 400; }
+  #dev-panel .dev-section { margin-bottom: 12px; padding: 8px 10px; border: 1px solid #ffffff18; border-radius: 10px; background: rgba(255,255,255,0.03); }
+  #dev-panel .dev-sec-title { font-size: 12px; font-weight: 700; color: #ffd84d; margin-bottom: 8px; letter-spacing: 1px; }
+  #dev-panel label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: #cfd6e4; padding: 4px 0; }
+  #dev-panel input[type="number"] { width: 84px; background: #1a1c2c; border: 1px solid #ffffff22; color: #fff; border-radius: 6px; padding: 3px 6px; font-size: 12px; text-align: right; }
+  #dev-panel input[type="checkbox"] { width: 15px; height: 15px; accent-color: #4ec9ff; }
+  #dev-panel select { background: #1a1c2c; border: 1px solid #ffffff22; color: #fff; border-radius: 6px; padding: 3px 6px; font-size: 12px; }
+  #dev-panel .dev-actions { display: flex; gap: 8px; border: none; background: none; padding: 0; }
+  #dev-panel .dev-actions button { flex: 1; padding: 7px 0; border-radius: 8px; border: 1px solid #4ec9ff44; background: #12202e; color: #9fd8ff; font-size: 12px; cursor: pointer; font-weight: 700; }
+  #dev-panel .dev-actions button:hover { background: #1b3a55; }
+
 </style>
 </head>
 <body>
@@ -142,6 +157,42 @@
 
 <video id="camera-video" autoplay playsinline muted></video>
 
+<div id="dev-panel">
+  <div class="dev-head">🛠 开发者面板 <span class="dev-key-hint">按 Q 开关</span></div>
+  <div class="dev-section">
+    <div class="dev-sec-title">🎮 游戏数值建构</div>
+    <label>玩家血量 <input type="number" id="dev-maxhp" value="10" min="1" max="99"></label>
+    <label>Boss 血量 <input type="number" id="dev-bosshp" value="20" min="1" max="999"></label>
+    <label>选招时间(ms) <input type="number" id="dev-selectms" value="5000" min="1000" step="100"></label>
+    <label>连击长度 <input type="number" id="dev-combolen" value="2" min="1" max="6"></label>
+    <label>剪刀伤害 <input type="number" id="dev-dmg-scissors" value="1" min="0" max="20"></label>
+    <label>升龙伤害 <input type="number" id="dev-dmg-dragon" value="2" min="0" max="20"></label>
+    <label>Boss近战伤害 <input type="number" id="dev-boss-melee" value="3" min="0" max="20"></label>
+    <label>Boss远程伤害 <input type="number" id="dev-boss-ranged" value="2" min="0" max="20"></label>
+  </div>
+  <div class="dev-section">
+    <div class="dev-sec-title">💡 作弊模式</div>
+    <label><input type="checkbox" id="dev-god"> 🛡️ 玩家无敌（不受伤害）</label>
+    <label><input type="checkbox" id="dev-oneshot"> 💥 一击必杀（秒 Boss）</label>
+    <label><input type="checkbox" id="dev-infinite"> ⏱ 无限选招时间</label>
+    <label><input type="checkbox" id="dev-auto-guard"> 🪨 自动防御（Boss 阶段全程石头）</label>
+  </div>
+  <div class="dev-section">
+    <div class="dev-sec-title">🧭 调试</div>
+    <label><input type="checkbox" id="dev-pose-debug"> 🦴 显示骨骼调试窗</label>
+    <label>镜像方向
+      <select id="dev-mirror">
+        <option value="-1">玩家左 → 白盒左</option>
+        <option value="1">玩家左 → 白盒右</option>
+      </select>
+    </label>
+  </div>
+  <div class="dev-section dev-actions">
+    <button id="dev-skip">⏭ 跳过选招</button>
+    <button id="dev-reset">🔄 重置游戏</button>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" crossorigin="anonymous"></script>
@@ -151,11 +202,11 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.m
 // ═══════════════════════════════════════════════════════════
 //  常量与数据表
 // ═══════════════════════════════════════════════════════════
-const MAX_HP_PLAYER = 10;
-const MAX_HP_BOSS = 20;
+let MAX_HP_PLAYER = 10;
+let MAX_HP_BOSS = 20;
 const MAX_PLAYERS = 4;
-const COMBO_LEN = 2;
-const SELECT_MS = 5000;
+let COMBO_LEN = 2;
+let SELECT_MS = 5000;
 const EXECUTE_MS = 2400;
 const BOSS_WARN_MS = 5000;
 const ROUND_END_MS = 2200;
@@ -163,6 +214,9 @@ const GESTURE_HOLD_MS = 800;
 const RECONFIRM_MS = 1000;
 const LANE_STEP = 4.0; // = 轨道间距（加宽后），倾斜一次正好切到下一条轨道中心
 const WORLD_SHIFT_X = 1.5; // 轨道组中心在世界 +X（=屏幕左侧），Boss 留在世界中心（画面中央消失点）
+// 姿态→轨道镜像方向：-1 表示"玩家往左偏肩 → 白盒往左"（selfieMode 下肩点左移 → 世界坐标左移）。
+// 开发者面板可切换，若玩家感觉方向相反可翻转为 +1。
+let POSE_MIRROR = -1;
 
 const MOVE = { STONE:0, SCISSORS:1, DRAGON:2, PASS:3 };
 const MOVES = {
@@ -175,10 +229,13 @@ const MOVE_NAMES = [MOVE.STONE,MOVE.SCISSORS,MOVE.DRAGON,MOVE.PASS].map(id=>MOVE
 const MOVE_ICONS = [MOVE.STONE,MOVE.SCISSORS,MOVE.DRAGON,MOVE.PASS].map(id=>MOVES[id].icon);
 
 const BOSS_ATTACK = { MELEE:0, RANGED:1 };
-const BOSS_MELEE_DMG = 3;
-const BOSS_RANGED_DMG = 2;
+let BOSS_MELEE_DMG = 3;
+let BOSS_RANGED_DMG = 2;
 const BOSS_RANGED_GUARDED = 1;
 const COUNTER_DMG = 1;
+
+// 作弊模式开关（开发者面板）
+const CHEAT = { god:false, oneShot:false, infinite:false, autoGuard:false };
 const MELEE_RADIUS = 3.5;   // 近战预警矩形视觉半宽（5.0×1.4/2），攻击判定与画面完全一致
 const RANGED_RADIUS = 2.8;  // 远程预警红圈视觉外半径（1.0 × 2.8），攻击判定局限在圈内
 const DEFEND_MIN_FRAMES = 4; // 防御姿势需在预警期间累计至少 4 帧才判定有效，防抖动误判
@@ -366,6 +423,22 @@ const poseDebugCanvas = document.getElementById('pose-debug-canvas');
 const poseDebugCtx = poseDebugCanvas.getContext('2d');
 const poseDebugCoords = document.getElementById('pose-debug-coords');
 let poseModelInfo = '未加载';
+// 开发者面板
+const devPanel = document.getElementById('dev-panel');
+const devMaxHp = document.getElementById('dev-maxhp');
+const devBossHp = document.getElementById('dev-bosshp');
+const devSelectMs = document.getElementById('dev-selectms');
+const devComboLen = document.getElementById('dev-combolen');
+const devDmgScissors = document.getElementById('dev-dmg-scissors');
+const devDmgDragon = document.getElementById('dev-dmg-dragon');
+const devBossMelee = document.getElementById('dev-boss-melee');
+const devBossRanged = document.getElementById('dev-boss-ranged');
+const devGod = document.getElementById('dev-god');
+const devOneShot = document.getElementById('dev-oneshot');
+const devInfinite = document.getElementById('dev-infinite');
+const devAutoGuard = document.getElementById('dev-auto-guard');
+const devPoseDebug = document.getElementById('dev-pose-debug');
+const devMirror = document.getElementById('dev-mirror');
 
 // 镜像输入 canvas：前置摄像头底层帧未镜像，MediaPipe 对自拍镜像帧识别更好
 const poseInputCanvas = document.createElement('canvas');
@@ -756,26 +829,37 @@ function createSignTexture() {
   g.fillStyle = '#ffeebb'; g.fillText('🎮 怎么玩', c.width/2, 120);
   // 内容
   const rows = [
-    { icon:'✂️', title:'剪刀', desc:'手臂前刺 · 1 伤', color:'#7fffb3' },
-    { icon:'🐉', title:'升龙拳', desc:'手臂上勾 · 2 伤', color:'#ffd84d' },
-    { icon:'🪨', title:'石头', desc:'双臂交叉 · 防御/反击', color:'#6fd3ff' },
-    { icon:'🚫', title:'垂手', desc:'不出招', color:'#a78bfa' },
-    { icon:'↔️', title:'身体侧倾', desc:'换轨道躲闪', color:'#ff8585' },
+    { icon:'✂️', title:'剪刀', desc:'双拳前刺 · 攻1伤', color:'#7fffb3' },
+    { icon:'🐉', title:'升龙拳', desc:'双拳上勾 · 攻2伤', color:'#ffd84d' },
+    { icon:'🪨', title:'石头', desc:'双臂交叉 · 守/反击', color:'#6fd3ff' },
+    { icon:'🚫', title:'垂手', desc:'不出招', color:'#c4b5fd' },
+    { icon:'↔️', title:'侧倾换轨', desc:'左右偏身 · 躲Boss攻击', color:'#ff8585' },
   ];
-  let y = 280;
+  let y = 270;
   for (const row of rows) {
-    g.font = 'bold 72px "Segoe UI", "Microsoft YaHei", sans-serif';
+    g.font = 'bold 74px "Segoe UI", "Microsoft YaHei", sans-serif';
     g.textAlign = 'left'; g.textBaseline = 'middle';
+    // 行标题描边提亮，提高可读性
+    g.lineWidth = 8; g.strokeStyle = '#000000cc';
     g.fillStyle = row.color;
+    g.strokeText(`${row.icon} ${row.title}`, 80, y);
     g.fillText(`${row.icon} ${row.title}`, 80, y);
-    g.font = '46px "Segoe UI", "Microsoft YaHei", sans-serif';
-    g.fillStyle = '#f0f4fa'; // 提高描述文字亮度
-    g.fillText(row.desc, 80, y+82);
-    y += 210;
+    g.font = '52px "Segoe UI", "Microsoft YaHei", sans-serif';
+    g.lineWidth = 5; g.strokeStyle = '#000000bb';
+    g.fillStyle = '#ffffff'; // 描述文字提亮为纯白
+    g.strokeText(row.desc, 80, y+86);
+    g.fillText(row.desc, 80, y+86);
+    y += 212;
   }
-  // 底部提示
-  g.font = '40px "Segoe UI", "Microsoft YaHei", sans-serif';
-  g.textAlign = 'center'; g.fillStyle = '#b0c4de';
+  // 底部玩法提示（更详细）
+  g.font = '44px "Segoe UI", "Microsoft YaHei", sans-serif';
+  g.textAlign = 'center'; g.lineWidth = 6; g.strokeStyle = '#000000cc';
+  g.fillStyle = '#ffe9a8';
+  g.strokeText('回合制：摆出2招 → 自动连击 → 躲避Boss', c.width/2, c.height-150);
+  g.fillText('回合制：摆出2招 → 自动连击 → 躲避Boss', c.width/2, c.height-150);
+  g.font = '36px "Segoe UI", "Microsoft YaHei", sans-serif';
+  g.fillStyle = '#ffffff';
+  g.strokeText('请退后一步，让全身入镜', c.width/2, c.height-70);
   g.fillText('请退后一步，让全身入镜', c.width/2, c.height-70);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
@@ -786,8 +870,8 @@ function createSignBoard() {
   const frameMat = new THREE.MeshStandardMaterial({ color:0x3a3a4a, roughness:0.7, metalness:0.2 });
   // 正面自发光材质：背景保持暗色但文字更亮
   const faceMat = new THREE.MeshStandardMaterial({
-    map:createSignTexture(), roughness:0.6, metalness:0.05,
-    emissive:0x111320, emissiveMap:createSignTexture(), emissiveIntensity:0.35
+    map:createSignTexture(), roughness:0.5, metalness:0.02,
+    emissive:0x33405a, emissiveMap:createSignTexture(), emissiveIntensity:0.85
   });
   const materials = [frameMat, frameMat, frameMat, frameMat, faceMat, frameMat]; // +Z 面为正面
   const board = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), materials);
@@ -1125,14 +1209,15 @@ function distributePoses(poses) {
 }
 
 // 根据肩中点在画面中的水平位置，把玩家映射到最近的轨道，保证 avatar 永远站在轨道中心
-// 注意：MediaPipe selfieMode=true 时 landmark 已是镜像坐标系（与镜像预览一致），
-// 用户向右移动 → shoulderX 增大 → 白盒也应向右，故用 (shoulderX - 0.5) 而非 (0.5 - shoulderX)。
+// 方向约定（已实测修正）：玩家在镜头前往左偏肩膀 → 白盒往左；往右 → 白盒往右。
+// 公式 worldX = SHIFT + POSE_MIRROR * (shoulderX - 0.5) * ... ，
+// POSE_MIRROR = -1 即 (0.5 - shoulderX)：shoulderX 减小（向左）→ worldX 减小（向左）。
 function updatePlayerLaneFromPose(p) {
   if (!p || !p.lm || !p.active) return;
   const lS = p.lm[KP.L_SHOULDER], rS = p.lm[KP.R_SHOULDER];
   if (!lS || !rS || (lS.visibility<0.2 && rS.visibility<0.2)) return;
   const shoulderX = (lS.x + rS.x) / 2;
-  const worldX = WORLD_SHIFT_X + (shoulderX - 0.5) * LANE_STEP * 2.2;
+  const worldX = WORLD_SHIFT_X + POSE_MIRROR * (shoulderX - 0.5) * LANE_STEP * 2.2;
   const lane = Math.round((worldX - WORLD_SHIFT_X) / LANE_STEP);
   p.targetLane = Math.max(-1, Math.min(1, lane));
   p.laneSmooth = (p.laneSmooth || 0) + (p.targetLane - (p.laneSmooth || 0)) * 0.18;
@@ -1200,11 +1285,9 @@ function demoPoses() {
     const sw=0.14;
     // 玩家 i 的基础屏幕 X 偏移对应世界 X；LANE_STEP 变大后减小映射系数，避免越界
     const baseOff = bases[i] / 16;
-    // Boss 阶段每个玩家通过"身体侧倾"换轨道躲闪。
-    // 关键：侧倾时肩中点保持稳定（updatePlayerLaneFromPose 的 targetLane 保持 0），
-    // 只有鼻子相对肩部偏移触发 detectLean → lane ±1。
-    // 若把 laneOff 同时加进 midX，会导致位置检测与 lean 修正相互抵消（targetLane+lean=0），玩家不动。
-    // 演示模式：让玩家换轨后保持一段时间（≥800ms），避免截图永远抓到滑动中的中间帧
+    // Boss 阶段每个玩家通过移动肩膀（肩中点）换轨道躲闪。
+    // 关键：lane 完全由 updatePlayerLaneFromPose 基于肩中点位置决定（玩家往左偏 → 白盒往左）。
+    // 演示模式通过移动 midX 模拟"偏肩膀"，偏移量需使换算后 lane 跨越 ≥0.5（0.28*2.2≈0.62）。
     let laneOff = 0;
     if (phase === PHASE.BOSS_ATTACK) {
       const lanePhase = ((t + i*1.1) % 5.5) / 5.5;
@@ -1212,13 +1295,16 @@ function demoPoses() {
       else if (lanePhase < 0.55) laneOff = (i % 2 === 0) ? 1 : -1;             // 2.2s 内向一侧躲
       else                       laneOff = (i % 2 === 0) ? -1 : 1;             // 2.5s 内反向躲
     }
-    const midX = 0.5 + baseOff;   // 肩中点稳定，不随躲闪变化
+    // 肩膀随躲闪移动：与 updatePlayerLaneFromPose 的 POSE_MIRROR=-1 语义一致，
+    // 真实玩家"往右偏肩"→ shoulderX 增大 → 白盒往右。demo 中 laneOff=1 模拟右偏，
+    // 故 midX 需减小（0.5 - laneOff*0.28）才能让 shoulderX 增大（0.22 → 白盒往右）。
+    const midX = 0.5 + baseOff - laneOff*0.28;
     const m = demoMoveFor(i, t);
     // Boss 阶段玩家尽量摆防御（石头），让反击/减伤发生
     const gesture = (phase === PHASE.BOSS_ATTACK && i===0) ? MOVE.STONE : m;
     const wY = gesture===MOVE.DRAGON?0.28 : gesture===MOVE.SCISSORS?0.42 : gesture===MOVE.STONE?0.5 : 0.62;
-    // 倾斜：鼻子相对肩中点偏移，模拟头部左右摆动（系数 0.6*0.6=0.36>0.32 触发 detectLean=±1）
-    const noseOff = phase===PHASE.BOSS_ATTACK ? laneOff*0.6 : 0;
+    // 鼻子跟随肩膀移动（不再用于 lane 修正，仅保持姿态自然）
+    const noseOff = laneOff*0.0;
     const pt=(x,y,v=1)=>({x:midX+x*sw,y:y,z:0,visibility:v});
     fake.push([
       pt(noseOff,0.30),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),
@@ -1233,7 +1319,7 @@ function demoPoses() {
 
 // 骨骼捕捉调试窗（仅 DEMO 测试版本显示）：火柴人 + 归一化坐标 + lean/distance
 function drawPoseDebug() {
-  const showDebug = DEMO || cameraActive;
+  const showDebug = DEMO || cameraActive || devPoseDebug.checked;
   poseDebugBox.style.display = showDebug ? 'block' : 'none';
   if (demoHint) {
     if (DEMO || cameraActive) demoHint.style.display = 'none';
@@ -1441,9 +1527,10 @@ function updateExecute(dt, now) {
           let dmg = MOVES[mv].damage;
           // 连击增伤：同回合上一段也是攻击，则本段 +1 伤害
           if (segStart > 0 && MOVES[p.combo[segStart-1]].type === 'attack') dmg += 1;
+          if (CHEAT.oneShot) dmg = MAX_HP_BOSS;   // 一击必杀
           bossHp = Math.max(0, bossHp - dmg);
           bossAnim.hitFlashT = 0.3;   // 机甲受击闪白
-          const label = dmg === MOVES[mv].damage ? `-${dmg}` : `连击 -${dmg}`;
+          const label = CHEAT.oneShot ? '💥 秒杀!' : (dmg === MOVES[mv].damage ? `-${dmg}` : `连击 -${dmg}`);
           spawnFloat(new THREE.Vector3(0, 24, 32), label, '#ff6b6b');
           updateBossHp();
         }
@@ -1479,17 +1566,17 @@ function updateBossAttack(dt, now) {
     if (lm) {
       const g = classifyGesture(lm);
       // 防御需在 Boss 阶段保持石头
-      const isGuard = g === MOVE.STONE;
+      const isGuard = g === MOVE.STONE || CHEAT.autoGuard;   // 作弊：自动防御
       if (isGuard) { p.defending = true; p.defendFrames++; }
       else { p.defending = false; p.defendFrames = 0; }
-      // Boss 阶段同时根据头部/肩部偏移做最终 lean 修正，与位置检测叠加但允许小幅摆头躲闪
+      // 位置已由 updatePlayerLaneFromPose（肩中点）决定，不再用 lean 叠加，
+      // 否则"偏肩膀"时头部相对肩膀反向偏移会导致白盒反向移动
       const headLean = detectLean(lm);
       p.lean = headLean;
     }
     p.leanSmooth += (p.lean - p.leanSmooth)*Math.min(1, dt*6);
-    // lane 取位置检测的目标 lane + 头部躲闪修正
-    const headLaneOffset = Math.round(p.leanSmooth);
-    p.lane = Math.max(-1, Math.min(1, (p.targetLane || 0) + headLaneOffset));
+    // lane 完全由肩膀位置决定：玩家往右偏 → 白盒往右（与 updatePlayerLaneFromPose 保持一致）
+    p.lane = Math.max(-1, Math.min(1, p.targetLane || 0));
   });
 
   // 预警可视化
@@ -1553,8 +1640,12 @@ function resolveBossAttack() {
     }
     const v = new THREE.Vector3(playerX, 2.2, PLAYER_Z);
     if (dmg > 0) {
-      p.hp = Math.max(0, p.hp - dmg);
-      spawnFloat(v, `-${dmg}`, guarded?'#69f0ae':'#ff6b6b');
+      if (CHEAT.god) {
+        spawnFloat(v, '🛡️ 无敌', '#4ec9ff');   // 作弊：玩家无敌
+      } else {
+        p.hp = Math.max(0, p.hp - dmg);
+        spawnFloat(v, `-${dmg}`, guarded?'#69f0ae':'#ff6b6b');
+      }
     } else if (countered) {
       bossHp = Math.max(0, bossHp - COUNTER_DMG);
       bossAnim.hitFlashT = 0.3;   // 机甲受击闪白
@@ -1759,6 +1850,68 @@ startBtn.addEventListener('click', () => {
   }
   startGame();
 });
+
+// ═══════════════════════════════════════════════════════════
+//  开发者面板：按 Q 开关；参数调整 / 作弊模式 / 调试
+// ═══════════════════════════════════════════════════════════
+function initDevPanel() {
+  // 数值建构实时应用
+  devMaxHp.addEventListener('change', () => {
+    MAX_HP_PLAYER = Math.max(1, parseInt(devMaxHp.value) || 10);
+    players.forEach(p => { p.hp = Math.min(p.hp, MAX_HP_PLAYER); updatePlayerHp(p); });
+  });
+  devBossHp.addEventListener('change', () => {
+    MAX_HP_BOSS = Math.max(1, parseInt(devBossHp.value) || 20);
+    updateBossHp();
+  });
+  devSelectMs.addEventListener('change', () => {
+    SELECT_MS = Math.max(500, parseInt(devSelectMs.value) || 5000);
+  });
+  devComboLen.addEventListener('change', () => {
+    COMBO_LEN = Math.min(6, Math.max(1, parseInt(devComboLen.value) || 2));
+    if (phase === PHASE.SELECT) {
+      players.forEach(p => { p.combo = p.combo.slice(0, COMBO_LEN); });
+    }
+  });
+  devDmgScissors.addEventListener('change', () => {
+    MOVES[MOVE.SCISSORS].damage = Math.max(0, parseInt(devDmgScissors.value) || 1);
+  });
+  devDmgDragon.addEventListener('change', () => {
+    MOVES[MOVE.DRAGON].damage = Math.max(0, parseInt(devDmgDragon.value) || 2);
+  });
+  devBossMelee.addEventListener('change', () => {
+    BOSS_MELEE_DMG = Math.max(0, parseInt(devBossMelee.value) || 3);
+  });
+  devBossRanged.addEventListener('change', () => {
+    BOSS_RANGED_DMG = Math.max(0, parseInt(devBossRanged.value) || 2);
+  });
+
+  // 作弊模式
+  devGod.addEventListener('change', () => { CHEAT.god = devGod.checked; });
+  devOneShot.addEventListener('change', () => { CHEAT.oneShot = devOneShot.checked; });
+  devInfinite.addEventListener('change', () => { CHEAT.infinite = devInfinite.checked; });
+  devAutoGuard.addEventListener('change', () => { CHEAT.autoGuard = devAutoGuard.checked; });
+  devMirror.addEventListener('change', () => { POSE_MIRROR = parseInt(devMirror.value) || -1; });
+
+  // 动作按钮
+  document.getElementById('dev-skip').addEventListener('click', () => {
+    if (phase === PHASE.SELECT) finishSelect();
+    else setMessage('仅在选招阶段可跳过', true);
+  });
+  document.getElementById('dev-reset').addEventListener('click', () => {
+    startGame();
+    setMessage('已重置', true);
+  });
+
+  // 按 Q 开关面板
+  window.addEventListener('keydown', e => {
+    if (e.key.toLowerCase() === 'q' && !e.ctrlKey && !e.metaKey) {
+      devPanel.classList.toggle('open');
+      e.preventDefault();
+    }
+  });
+}
+initDevPanel();
 window.addEventListener('resize', () => {
   camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
@@ -1806,7 +1959,7 @@ function loop(now) {
       break;
     case PHASE.SELECT: {
       players.forEach(p => { if (p.active && p.alive) tryConfirmGesture(p, now); });
-      if (allLocked() || now - phaseStart >= SELECT_MS) finishSelect();
+      if (allLocked() || (!CHEAT.infinite && now - phaseStart >= SELECT_MS)) finishSelect();
       break;
     }
     case PHASE.EXECUTE: updateExecute(dt, now); break;
