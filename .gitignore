@@ -2,3 +2,12 @@
 playtest-screenshot.png
 *_shot1.png
 *.log
+_*.py
+_*.txt
+_*.js
+_*.png
+_*.log
+_*.json
+.playwright-cli/
+.codebuddy/
+node_modules/
