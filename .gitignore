@@ -5,6 +5,7 @@ playtest-screenshot.png
 _*.py
 _*.txt
 _*.js
+_*.mjs
 _*.png
 _*.log
 _*.json
