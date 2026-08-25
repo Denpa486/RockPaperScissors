@@ -129,6 +129,10 @@
   .p-status.attack { color: var(--accent2); font-weight: 700; }
   .p-status.guard  { color: var(--accent1); font-weight: 700; }
   .p-status.dodge  { color: var(--green); font-weight: 700; }
+  .p-charge-wrap { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+  .p-charge-bar { flex: 1; height: 7px; border-radius: 4px; background: #1a1a22; border: 1px solid #ffd84d33; overflow: hidden; }
+  .p-charge-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #4ec9ff, #ffd84d); transition: width 0.35s ease; box-shadow: 0 0 8px rgba(255,216,77,0.6); }
+  .p-charge-text { font-size: 11px; color: #ffd84d; font-weight: 700; min-width: 24px; text-align: right; }
   .p-hp-wrap { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
   .p-hp-bar { flex: 1; height: 9px; border-radius: 4px; background: #1a1a22; overflow: hidden; }
   .p-hp-fill { height: 100%; background: linear-gradient(90deg, #34d399, #4ec9ff); transition: width 0.3s; }
@@ -156,7 +160,7 @@
   .btn:hover { border-color: var(--accent1); color: var(--accent1); }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  #message-box { position: fixed; top: 46%; left: 50%; transform: translate(-50%,-50%); font-size: 26px; font-weight: 800; letter-spacing: 3px; color: #fff; text-align: center; z-index: 8; text-shadow: 0 0 24px rgba(0,0,0,0.9),0 2px 8px rgba(0,0,0,0.8); pointer-events: none; transition: opacity 0.3s; white-space: pre-line; max-width: 90vw; line-height: 1.5; }
+  #message-box { position: fixed; top: auto; left: 16px; bottom: 132px; transform: none; font-size: 26px; font-weight: 800; letter-spacing: 3px; color: #fff; text-align: left; z-index: 8; text-shadow: 0 0 24px rgba(0,0,0,0.9),0 2px 8px rgba(0,0,0,0.8); pointer-events: none; transition: opacity 0.3s; white-space: pre-line; max-width: 44vw; line-height: 1.5; }
   #message-box.small { font-size: 15px; color: #ddd; letter-spacing: 1px; }
   #camera-video { position: fixed; left: 14px; top: 60px; width: 240px; height: 180px; object-fit: cover; border-radius: 10px; border: 1px solid #ffffff33; background: #000; transform: scaleX(-1); opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 9; }
   #camera-video.on { opacity: 0.95; }
@@ -384,7 +388,7 @@
 </div>
 
 <div id="players-hud">
-  <div class="p-hud inactive" id="hud-0"><div class="p-movecards"></div><div class="p-hud-row1"><span class="p-name" style="color:#4ec9ff;">⚪ 你</span><span class="p-status">未就位</span></div><div class="p-hp-wrap"><div class="p-hp-bar"><div class="p-hp-fill" style="width:100%"></div></div><span class="p-hp-text">10</span></div></div>
+  <div class="p-hud inactive" id="hud-0"><div class="p-movecards"></div><div class="p-hud-row1"><span class="p-name" style="color:#4ec9ff;">⚪ 你</span><span class="p-status">未就位</span></div><div class="p-charge-wrap"><span class="charge-label">⚔️ 架势</span><div class="p-charge-bar"><div class="p-charge-fill" id="player-charge-fill"></div></div><span class="p-charge-text" id="player-charge-text">0/3</span></div><div class="p-hp-wrap"><div class="p-hp-bar"><div class="p-hp-fill" style="width:100%"></div></div><span class="p-hp-text">10</span></div></div>
 </div>
 
 <div id="controls">
@@ -418,7 +422,7 @@
     <label>反击伤害 <input type="number" id="dev-dmg-counter" value="1" min="0" max="20"></label>
     <label>抢占伤害 <input type="number" id="dev-dmg-preempt" value="2" min="0" max="20"></label>
     <label>抢占窗口(ms) <input type="number" id="dev-preemptms" value="2000" min="800" step="200"></label>
-    <label>架势条上限 <input type="number" id="dev-chargemax" value="3" min="0" max="9"></label>
+    <label>架势条上限 <input type="number" id="dev-chargemax" value="10" min="0" max="100"></label>
     <label>AI 难度
       <select id="dev-ai">
         <option value="0">简单（纯随机）</option>
@@ -577,7 +581,7 @@ let bossHurtDone = false; // 本回合 Boss 是否已对玩家造成过一次伤
 
 // ⚔️ 架势条系统：剪刀打中石头 → +1；下回合攻击（剪刀/升龙）结算 +1/格
 let _origRandom = Math.random;   // playtest 用：保存原始随机函数
-let CHARGE_MAX = 3;              // 架势条上限（可在开发者面板调整）
+let CHARGE_MAX = 10;             // 架势条上限（可在开发者面板调整）
 let playerCharge = 0;            // 玩家架势条当前值
 let bossCharge = 0;              // Boss 架势条当前值
 let chargeGainedThisRound = false; // 每回合架势累积上限标记（一套连招最多 +1 格，避免连招瞬间攒满）
@@ -977,6 +981,10 @@ function updateThemeTransition(dt) {
 // ── 拳击八角笼擂台（参考 Tactic Boxing 电视转播感）──
 const PLAYER_Z = 6.2;      // 玩家站位（近侧）
 const BOSS_Z = 15.8;       // 红方拳手站位（远侧）
+const MID_Z = (PLAYER_Z + BOSS_Z) / 2;   // 擂台中央
+const CLASH_GAP = 0.7;                   // 贴身肉搏对峙时的相对间距（避免模型重叠）
+const CLASH_Z_PLAYER = MID_Z - CLASH_GAP; // 玩家从近侧(6.2)冲向中央后停靠位
+const CLASH_Z_BOSS   = MID_Z + CLASH_GAP; // Boss 从远侧(15.8)冲向中央后停靠位
 const OCT_R = 6.6;         // 八角笼外接半径
 const OCT_CX = 0, OCT_CZ = 11;
 const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), new THREE.MeshStandardMaterial({ color:0x0b0b12, roughness:0.95 }));
@@ -1089,6 +1097,11 @@ function updateBoxer(dt, now) {
   }
   g.position.set(0, 0, BOSS_Z);
   g.rotation.y = Math.PI;
+  // 贴身肉搏：PREEMPT/COUNTER 阶段从擂台远侧冲向中央，其余阶段退回站位
+  const clashTarget = (phase === PHASE.PREEMPT || phase === PHASE.COUNTER) ? CLASH_Z_BOSS : BOSS_Z;
+  if (boss.clashZ === undefined) boss.clashZ = BOSS_Z;
+  boss.clashZ = THREE.MathUtils.lerp(boss.clashZ, clashTarget, Math.min(1, dt * 12));
+  g.position.z = boss.clashZ;
   // 出招前扑（朝玩家 -Z 方向 lunge）
   const st = boss.animState;
   let lunge = 0;
@@ -1097,7 +1110,7 @@ function updateBoxer(dt, now) {
     if (f.name === 'STRIKE') lunge = Math.sin(st.phaseT*Math.PI) * 0.85;
     if (f.name === 'WINDUP') lunge = -0.12;
   }
-  g.position.z = BOSS_Z - lunge;
+  g.position.z = boss.clashZ - lunge;
   // 升龙拳：手臂上举并整个人跳起
   let jumpY = 0;
   if (st && st.active && st.move === 'dragon') {
@@ -2459,13 +2472,17 @@ function updateAvatar(p, dt) {
     if (f.name === 'STRIKE') jumpY = Math.sin(st.phaseT*Math.PI) * 1.35;
     else if (f.name === 'WINDUP') jumpY = -0.12;
   }
-  g.position.set(0, 0, PLAYER_Z + lunge);
+  // 贴身肉搏：PREEMPT/COUNTER 阶段从擂台近侧冲向中央，其余阶段退回站位
+  const clashTarget = (phase === PHASE.PREEMPT || phase === PHASE.COUNTER) ? CLASH_Z_PLAYER : PLAYER_Z;
+  if (p.clashZ === undefined) p.clashZ = PLAYER_Z;
+  p.clashZ = THREE.MathUtils.lerp(p.clashZ, clashTarget, Math.min(1, dt * 12));
+  g.position.set(0, 0, p.clashZ + lunge);
   g.rotation.z = leanZ;
   // 死亡倒地
   if (!p.alive) {
     g.rotation.x = Math.min(Math.PI/2, g.rotation.x + dt*2.5);
     g.position.y = -Math.sin(g.rotation.x)*0.85;
-    g.position.z = PLAYER_Z + 0.3;
+    g.position.z = p.clashZ + 0.3;
   } else {
     g.rotation.x = 0;
     g.position.y = jumpY;
@@ -2500,6 +2517,13 @@ function updateHud() {
     // 闪避联动标记（下回合攻击 +1/-1）提示
     const ch = document.getElementById('charge-hud');
     if (ch) ch.style.borderColor = nextAtkMod > 0 ? '#69f0ae' : nextAtkMod < 0 ? '#ff6b6b' : '#ffd84d33';
+  }
+  // ⚔️ 玩家血条上方架势条 UI（与底部架势条同步）
+  const pcf = document.getElementById('player-charge-fill');
+  const pct = document.getElementById('player-charge-text');
+  if (pcf && pct) {
+    pcf.style.width = (playerCharge/CHARGE_MAX*100)+'%';
+    pct.textContent = `${playerCharge}/${CHARGE_MAX}`;
   }
   // 🔴 Boss 架势条 UI
   const bcf = document.getElementById('boss-charge-fill');
@@ -3124,8 +3148,8 @@ window.__game = () => ({
   phaseStart,
   chargeFrac: nowChargeFrac(),
   counter: { ms: COUNTER_MS, perfectMs: COUNTER_PERFECT_MS, resolved: counterResolved, result: counterResult, frac: phase===PHASE.COUNTER ? Math.min(1,(performance.now()-phaseStart)/COUNTER_MS) : 0 },
-  player: player ? { active:player.active, alive:player.alive, hp:player.hp, move:player.move, combo:player.combo, gesture:player.gesture, gestureHoldStart:player.gestureHoldStart, lastConfirm:player.lastConfirm, punchKeyed:player.punchKeyed, visible:player.avatar.group.visible } : null,
-  boss: { alive: bossHp>0, deathT: boss.deathT, hitFlashT: boss.hitFlashT },
+  player: player ? { active:player.active, alive:player.alive, hp:player.hp, move:player.move, combo:player.combo, gesture:player.gesture, gestureHoldStart:player.gestureHoldStart, lastConfirm:player.lastConfirm, punchKeyed:player.punchKeyed, visible:player.avatar.group.visible, posZ: player.avatar.group.position.z, clashZ: player.clashZ } : null,
+  boss: { alive: bossHp>0, deathT: boss.deathT, hitFlashT: boss.hitFlashT, posZ: boss.group.position.z, clashZ: boss.clashZ },
   judgeStats: { playerDmg: roundPlayerDmg, bossDmg: roundBossDmg },
   floats: floatPool.map(f => { const img = f.sprite.material.map ? f.sprite.material.map.image : null; return { text: (img && img.__text) || '?', texW: img?img.width:0, texH: img?img.height:0, scale: [f.sprite.scale.x, f.sprite.scale.y] }; }),
 });
