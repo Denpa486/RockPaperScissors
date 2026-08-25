@@ -48,49 +48,49 @@
   #round-indicator { font-size: 14px; color: #999; letter-spacing: 1px; }
 
   /* ═══ 回合切换全屏公告（文字分割上下两半左右飞入 → 故障艺术停留 → 飞出消散）═══ */
-  #phase-banner { position: fixed; inset: 0; z-index: 20; pointer-events: none; overflow: hidden; opacity: 0; }
+  #phase-banner { position: fixed; left: 16px; bottom: 210px; width: min(460px, 60vw); height: 64px; z-index: 20; pointer-events: none; overflow: visible; opacity: 0; }
   #phase-banner.show { opacity: 1; }
-  #phase-banner .b-half { position: absolute; left: 0; width: 100%; height: 50%; display: flex; align-items: center; justify-content: center; font-size: clamp(30px, 7vw, 64px); font-weight: 900; letter-spacing: 6px; color: #fff; white-space: pre; }
+  #phase-banner .b-half { position: absolute; left: 0; width: 100%; height: auto; display: flex; align-items: center; justify-content: flex-start; font-size: clamp(24px, 4.5vw, 44px); font-weight: 900; letter-spacing: 4px; color: #fff; white-space: pre; line-height: 1.25; }
   #phase-banner .b-top { top: 0; }
-  #phase-banner .b-bot { top: 50%; }
+  #phase-banner .b-bot { display: none; }
   #phase-banner.show .b-top { animation: bannerInTop 2.6s cubic-bezier(.2,.8,.2,1) forwards; }
   #phase-banner.show .b-bot { animation: bannerInBot 2.6s cubic-bezier(.2,.8,.2,1) forwards; }
-  /* 上/下半从左右飞入 → 拼合（故障抖动）→ 飞散 */
+  /* 左下角横幅：从左飞入 → 故障抖动 → 向左飞散 */
   @keyframes bannerInTop {
-    0% { transform: translateX(-110%); opacity: 0; }
+    0% { transform: translateX(-120%); opacity: 0; }
     10% { transform: translateX(0); opacity: 1; }
     30% { transform: translateX(3px); }
     34% { transform: translateX(-2px); }
     38% { transform: translateX(1px); }
     78% { transform: translateX(0); opacity: 1; }
-    96% { transform: translateX(-115%); opacity: 0; }
-    100% { transform: translateX(-120%); opacity: 0; }
+    96% { transform: translateX(-125%); opacity: 0; }
+    100% { transform: translateX(-130%); opacity: 0; }
   }
   @keyframes bannerInBot {
-    0% { transform: translateX(110%); opacity: 0; }
+    0% { transform: translateX(-120%); opacity: 0; }
     10% { transform: translateX(0); opacity: 1; }
     30% { transform: translateX(-3px); }
     34% { transform: translateX(2px); }
     38% { transform: translateX(-1px); }
     78% { transform: translateX(0); opacity: 1; }
-    96% { transform: translateX(115%); opacity: 0; }
-    100% { transform: translateX(120%); opacity: 0; }
+    96% { transform: translateX(-125%); opacity: 0; }
+    100% { transform: translateX(-130%); opacity: 0; }
   }
   /* 霓虹辉光（主题色） */
   #phase-banner .b-half { text-shadow: 0 0 6px currentColor, 0 0 18px currentColor, 0 0 42px currentColor; }
   #phase-banner.blue  .b-half { color: #7cc8ff; }
-  #phase-banner.blue  { background: radial-gradient(circle at 50% 50%, rgba(78,150,255,0.16), transparent 65%); }
+  #phase-banner.blue  { background: radial-gradient(circle at 0% 50%, rgba(78,150,255,0.16), transparent 65%); }
   #phase-banner.red   .b-half { color: #ff6b6b; }
-  #phase-banner.red   { background: radial-gradient(circle at 50% 50%, rgba(255,80,80,0.18), transparent 65%); }
+  #phase-banner.red   { background: radial-gradient(circle at 0% 50%, rgba(255,80,80,0.18), transparent 65%); }
   #phase-banner.white .b-half { color: #fff; }
-  #phase-banner.white { background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.2), transparent 60%); }
+  #phase-banner.white { background: radial-gradient(circle at 0% 50%, rgba(255,255,255,0.2), transparent 60%); }
   /* 扫描线 */
   #phase-banner .b-scan { position: absolute; left: 0; right: 0; height: 3px; top: 40%; background: linear-gradient(90deg, transparent, currentColor, transparent); opacity: 0; }
   #phase-banner.show .b-scan { opacity: 0.8; animation: bannerScan 2.6s ease-in-out forwards; }
   #phase-banner.blue  .b-scan { color: #7cc8ff; }
   #phase-banner.red   .b-scan { color: #ff6b6b; }
   #phase-banner.white .b-scan { color: #fff; }
-  @keyframes bannerScan { 0%, 6% { top: 30%; opacity: 0; } 12% { opacity: 0.9; } 82% { opacity: 0.9; } 90% { top: 72%; opacity: 0; } 100% { top: 72%; opacity: 0; } }
+  @keyframes bannerScan { 0%, 6% { top: 10%; opacity: 0; } 12% { opacity: 0.9; } 82% { opacity: 0.9; } 90% { top: 85%; opacity: 0; } 100% { top: 85%; opacity: 0; } }
   /* 白色闪电粒子（抢占先机） */
   #phase-banner.white .b-half { animation-duration: 1.8s; }
   @keyframes bannerFlash { 0%,100% { filter: drop-shadow(0 0 0 rgba(255,255,255,0)); } 50% { filter: drop-shadow(0 0 24px rgba(255,255,255,0.9)); } }
