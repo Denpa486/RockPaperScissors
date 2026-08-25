@@ -48,49 +48,49 @@
   #round-indicator { font-size: 14px; color: #999; letter-spacing: 1px; }
 
   /* ═══ 回合切换全屏公告（文字分割上下两半左右飞入 → 故障艺术停留 → 飞出消散）═══ */
-  #phase-banner { position: fixed; left: 16px; bottom: 210px; width: min(460px, 60vw); height: 64px; z-index: 20; pointer-events: none; overflow: visible; opacity: 0; }
+  #phase-banner { position: fixed; inset: 0; z-index: 20; pointer-events: none; overflow: hidden; opacity: 0; }
   #phase-banner.show { opacity: 1; }
-  #phase-banner .b-half { position: absolute; left: 0; width: 100%; height: auto; display: flex; align-items: center; justify-content: flex-start; font-size: clamp(24px, 4.5vw, 44px); font-weight: 900; letter-spacing: 4px; color: #fff; white-space: pre; line-height: 1.25; }
+  #phase-banner .b-half { position: absolute; left: 0; width: 100%; height: 50%; display: flex; align-items: center; justify-content: center; font-size: clamp(30px, 7vw, 64px); font-weight: 900; letter-spacing: 6px; color: #fff; white-space: pre; }
   #phase-banner .b-top { top: 0; }
-  #phase-banner .b-bot { display: none; }
+  #phase-banner .b-bot { top: 50%; }
   #phase-banner.show .b-top { animation: bannerInTop 2.6s cubic-bezier(.2,.8,.2,1) forwards; }
   #phase-banner.show .b-bot { animation: bannerInBot 2.6s cubic-bezier(.2,.8,.2,1) forwards; }
-  /* 左下角横幅：从左飞入 → 故障抖动 → 向左飞散 */
+  /* 上/下半从左右飞入 → 拼合（故障抖动）→ 飞散 */
   @keyframes bannerInTop {
-    0% { transform: translateX(-120%); opacity: 0; }
+    0% { transform: translateX(-110%); opacity: 0; }
     10% { transform: translateX(0); opacity: 1; }
     30% { transform: translateX(3px); }
     34% { transform: translateX(-2px); }
     38% { transform: translateX(1px); }
     78% { transform: translateX(0); opacity: 1; }
-    96% { transform: translateX(-125%); opacity: 0; }
-    100% { transform: translateX(-130%); opacity: 0; }
+    96% { transform: translateX(-115%); opacity: 0; }
+    100% { transform: translateX(-120%); opacity: 0; }
   }
   @keyframes bannerInBot {
-    0% { transform: translateX(-120%); opacity: 0; }
+    0% { transform: translateX(110%); opacity: 0; }
     10% { transform: translateX(0); opacity: 1; }
     30% { transform: translateX(-3px); }
     34% { transform: translateX(2px); }
     38% { transform: translateX(-1px); }
     78% { transform: translateX(0); opacity: 1; }
-    96% { transform: translateX(-125%); opacity: 0; }
-    100% { transform: translateX(-130%); opacity: 0; }
+    96% { transform: translateX(115%); opacity: 0; }
+    100% { transform: translateX(120%); opacity: 0; }
   }
   /* 霓虹辉光（主题色） */
   #phase-banner .b-half { text-shadow: 0 0 6px currentColor, 0 0 18px currentColor, 0 0 42px currentColor; }
   #phase-banner.blue  .b-half { color: #7cc8ff; }
-  #phase-banner.blue  { background: radial-gradient(circle at 0% 50%, rgba(78,150,255,0.16), transparent 65%); }
+  #phase-banner.blue  { background: radial-gradient(circle at 50% 50%, rgba(78,150,255,0.16), transparent 65%); }
   #phase-banner.red   .b-half { color: #ff6b6b; }
-  #phase-banner.red   { background: radial-gradient(circle at 0% 50%, rgba(255,80,80,0.18), transparent 65%); }
+  #phase-banner.red   { background: radial-gradient(circle at 50% 50%, rgba(255,80,80,0.18), transparent 65%); }
   #phase-banner.white .b-half { color: #fff; }
-  #phase-banner.white { background: radial-gradient(circle at 0% 50%, rgba(255,255,255,0.2), transparent 60%); }
+  #phase-banner.white { background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.2), transparent 60%); }
   /* 扫描线 */
   #phase-banner .b-scan { position: absolute; left: 0; right: 0; height: 3px; top: 40%; background: linear-gradient(90deg, transparent, currentColor, transparent); opacity: 0; }
   #phase-banner.show .b-scan { opacity: 0.8; animation: bannerScan 2.6s ease-in-out forwards; }
   #phase-banner.blue  .b-scan { color: #7cc8ff; }
   #phase-banner.red   .b-scan { color: #ff6b6b; }
   #phase-banner.white .b-scan { color: #fff; }
-  @keyframes bannerScan { 0%, 6% { top: 10%; opacity: 0; } 12% { opacity: 0.9; } 82% { opacity: 0.9; } 90% { top: 85%; opacity: 0; } 100% { top: 85%; opacity: 0; } }
+  @keyframes bannerScan { 0%, 6% { top: 30%; opacity: 0; } 12% { opacity: 0.9; } 82% { opacity: 0.9; } 90% { top: 72%; opacity: 0; } 100% { top: 72%; opacity: 0; } }
   /* 白色闪电粒子（抢占先机） */
   #phase-banner.white .b-half { animation-duration: 1.8s; }
   @keyframes bannerFlash { 0%,100% { filter: drop-shadow(0 0 0 rgba(255,255,255,0)); } 50% { filter: drop-shadow(0 0 24px rgba(255,255,255,0.9)); } }
@@ -477,8 +477,11 @@ const GESTURE_HOLD_MS = 500;     // 手势保持确认时长（反击挥拳 / �
 let SELECT_HOLD_MS = 1000;       // 选招阶段：每次选招需保持对应动作 1.0 秒才确认
 // ⚡ 慢动作抢占先机（剪刀 vs 剪刀）
 let PREEMPT_MS = 2000;           // 抢占窗口时长（圆环从外向内蓝→金填充）
-let PREEMPT_SLOW = 0.5;          // 慢动作时间缩放（0.5 倍速）
+let PREEMPT_SLOW = 0.5;          // 慢动作时间缩放（0.5 倍速，抢占/反击判定通用）
 let PREEMPT_DMG = 2;             // 抢占成功伤害
+let SLOW_VISUAL_MS = 1500;       // 慢动作视觉时长（0.5x 下约 1.5 秒，折合真实 750ms）
+let BOOST_MS = 500;              // 慢动作结束后加速回放时长（真实 0.5 秒）
+let BOOST_SPEED = 1.2;           // 加速回放倍速（1.2x，形成反差感）
 const RECONFIRM_MS = 700;        // 重复出招防抖
 
 const MOVE = { STONE:0, SCISSORS:1, DRAGON:2, DODGE:3 };
@@ -1743,12 +1746,21 @@ function showBanner(text, theme, key) {
 }
 
 function setPhase(p) {
+  const prevPhase = phase;
+  // 🥊 反击/抢占前摇：进入 PREEMPT/COUNTER 时玩家摆出摆拳蓄力姿态，离开时若无出拳动画则恢复待机
+  if (player && player.avatar) {
+    const enteringClash = (p === PHASE.PREEMPT || p === PHASE.COUNTER);
+    const leavingClash = (prevPhase === PHASE.PREEMPT || prevPhase === PHASE.COUNTER);
+    const animActive = player.animState && player.animState.active;
+    if (enteringClash && !animActive) applyPoseToRig(player.avatar, POSE_SCISSORS.WINDUP);
+    else if (leavingClash && !animActive) applyPoseToRig(player.avatar, POSE_IDLE);
+  }
   phase = p; phaseStart = performance.now();
   // 🎬 全屏公告触发：选招=蓝霓虹、战斗=红霓虹、反击/抢占=白闪电
   if (p === PHASE.SELECT) showBanner(`回合 ${round} · 摆招`, 'blue', 'select'+round);
   else if (p === PHASE.EXECUTE) showBanner('对　决　！', 'red', 'exec'+round);
-  else if (p === PHASE.COUNTER) showBanner('反　击！', 'white', 'counter'+round);
-  else if (p === PHASE.PREEMPT) showBanner('抢占先机！', 'white', 'preempt'+round);
+  else if (p === PHASE.COUNTER) { showBanner('反　击！', 'white', 'counter'+round); sfx('zap'); }
+  else if (p === PHASE.PREEMPT) { showBanner('抢占先机！', 'white', 'preempt'+round); sfx('zap'); sfx('chargeStart'); }
   const map = {
     [PHASE.WAITING]:['phase-waiting','⏳ 等待开始'],
     [PHASE.SELECT]:['phase-select','🎯 摆招（倒计时自动确认）'],
@@ -2041,9 +2053,10 @@ function judgeSegment(seg) {
       counterResolved = false; counterResult = null; counterPunched = false;
       counterSeg = seg;               // 记录触发反击的段，反击后继续剩余招式
       if (player) player.gestureHoldStart = 0; // 重置手势计时，避免反击挥拳瞬间判定
+      spawnGhostTrail();              // 💨 闪避方残影闪现，迅速冲向升龙方
       setPhase(PHASE.COUNTER);
       setMessage('💨 闪避躲开 Boss 升龙！看准扩散圆环，填满瞬间挥拳反击！', true);
-      sfx('chargeStart');
+      sfx('chargeStart'); sfx('zap');
       if (window.__lastJudge) window.__lastJudge = { scene: 'pDodgeDragon', success: true, pHp: player.hp, pCharge: playerCharge, pMod: nextAtkMod };
     } else {
       // 闪避失败：受升龙伤害 + 下回合攻击 -1
@@ -2182,6 +2195,8 @@ function updateCounter(dt, now) {
   // 使用真实时钟（performance.now），与 phaseStart 同源，避免 rAF 时间戳漂移影响 ±50ms 完美判定
   const el = performance.now() - phaseStart;
   const frac = Math.min(1, el / COUNTER_MS);
+  // 心跳节奏：判定窗口内每 0.8s 一次，营造紧张感
+  if (!counterResolved && Math.floor(el / 800) !== Math.floor((el - 40) / 800)) sfx('heartbeat');
   if (!counterResolved) {
     let punched = false;
     if (DEMO) {
@@ -2249,11 +2264,34 @@ function applyPreemptDmg(dmg) {
   spawnFloat(bossPos, '⚡ 抢占先机！', '#4ec9ff');
 }
 
+// 💥 抢占先机失败惩罚：Boss 出拳命中玩家（与成功对称，扣 2 点伤害 + 红色震动演出）
+function applyPreemptFailDmg(dmg) {
+  if (!player || !player.alive) return;
+  const bossPos = new THREE.Vector3(0, 2.6, CLASH_Z_BOSS);
+  const playerPos = new THREE.Vector3(0, 2.6, CLASH_Z_PLAYER);
+  let real = dmg;
+  player.hp = Math.max(0, player.hp - real);
+  roundBossDmg += real;
+  player.hitFlashT = 0.25;
+  if (player.hp <= 0) player.alive = false;
+  spawnFloat(playerPos, `-${real}`, '#ff6b6b');
+  updatePlayerHp(player);
+  sfx('hurt');
+  spawnBurst(playerPos, 0xff6b6b, 30, 5);
+  spawnSpeedLines(bossPos, playerPos);
+  addShake(0.6); triggerFlash(0.4);
+  // Boss 出拳命中演出
+  if (boss && boss.animState) playMove(boss, MOVE_KEYS[MOVE.SCISSORS]);
+  spawnFloat(playerPos, '💥 Boss 反击！', '#ff6b6b');
+}
+
 // ⚡ 剪刀 vs 剪刀的慢动作抢占窗口：
 // 圆环从外向内蓝→金填充（PREEMPT_MS 填满），填满前出拳 = 抢占成功 Boss -2 格；超时则失败
 function updatePreempt(dt, now) {
   const el = performance.now() - phaseStart;
   const frac = Math.min(1, el / PREEMPT_MS);
+  // 心跳节奏：判定窗口内每 0.8s 一次，营造紧张感
+  if (!preemptResolved && Math.floor(el / 800) !== Math.floor((el - 40) / 800)) sfx('heartbeat');
   if (!preemptResolved) {
     let punched = false;
     if (DEMO) {
@@ -2272,7 +2310,8 @@ function updatePreempt(dt, now) {
     } else if (el >= PREEMPT_MS + 300) {
       preemptResolved = true;
       preemptResult = 'fail';
-      setMessage('💨 圆环填满，抢占失败… 双方都不受伤害', true);
+      applyPreemptFailDmg(PREEMPT_DMG);   // 💥 抢占失败：Boss 命中玩家扣 2 点（与成功对称）
+      setMessage('💨 圆环填满，抢占失败… Boss 反击命中！你受到 '+PREEMPT_DMG+' 点伤害', true);
     }
   } else if (el >= PREEMPT_MS + 1000) {
     if (bossHp <= 0) { setPhase(PHASE.VICTORY); return; }
@@ -2422,11 +2461,31 @@ function applyCamera() {
   }
   let base = CAM_BASE;
   let look = CAM_LOOK;
-  // ⚡ 抢占先机：镜头拉近玩家上半身（慢动作特写）
-  if (phase === PHASE.PREEMPT) {
-    const k = 0.5;   // 拉近程度
-    base = new THREE.Vector3(CAM_BASE.x*k, CAM_BASE.y*(0.55+0.45*k), CAM_BASE.z*k + (PLAYER_Z + BOSS_Z)/2*(1-k));
-    look = new THREE.Vector3(0, 2.9, PLAYER_Z);
+  // ⚡🥊 抢占先机 / 防守反击：三段式镜头（远景→中景对峙→玩家特写）
+  if (phase === PHASE.PREEMPT || phase === PHASE.COUNTER) {
+    const el = performance.now() - phaseStart;
+    const resolved = phase === PHASE.PREEMPT ? preemptResolved : counterResolved;
+    // ① 远景→中景：0~0.35s 平滑拉近擂台中央对峙点
+    const kMid = Math.min(1, el / 350) * 0.5;
+    const midBase = new THREE.Vector3(CAM_BASE.x*kMid, CAM_BASE.y*(0.55+0.45*kMid), CAM_BASE.z*kMid + MID_Z*(1-kMid));
+    const midLook = new THREE.Vector3(0, 2.9, MID_Z);
+    if (resolved) {
+      // 判定结束：拉回中景对峙
+      base = midBase; look = midLook;
+    } else if (el > 350) {
+      // ② 中景→玩家特写：0.35s 起 0.25s 内逼近玩家虚拟形象上半身
+      const kClose = Math.min(1, (el - 350) / 250);
+      const closeBase = new THREE.Vector3(
+        THREE.MathUtils.lerp(midBase.x, 0.9, kClose),
+        THREE.MathUtils.lerp(midBase.y, 2.2, kClose),
+        THREE.MathUtils.lerp(midBase.z, CLASH_Z_PLAYER - 1.7, kClose)
+      );
+      const closeLook = new THREE.Vector3(0, 2.7, CLASH_Z_PLAYER);
+      base = closeBase;
+      look = closeLook;
+    } else {
+      base = midBase; look = midLook;
+    }
   }
   camera.position.copy(base).add(camShakeOffset);
   camera.lookAt(look);
@@ -2491,6 +2550,38 @@ function updateAvatar(p, dt) {
   const breath = 1 + Math.sin(performance.now() * 0.002 + p.index) * 0.015;
   if (av.bones[JOINTS.CHEST]) av.bones[JOINTS.CHEST].group.scale.set(breath, breath, breath);
   updateMoveAnim(p, dt);
+}
+
+// 💨 闪避方残影（COUNTER 触发瞬间沿冲刺路径闪现的半透明 ghost）
+const ghostPool = [];   // { group, life }
+function spawnGhostTrail() {
+  if (!player || !player.avatar) return;
+  const fromZ = player.avatar.group.position.z;
+  const toZ = CLASH_Z_PLAYER;
+  for (let i = 0; i < 3; i++) {
+    const t = (i + 1) / 4;   // 0.25 / 0.5 / 0.75 等距散布
+    const g = player.avatar.group.clone(true);
+    g.traverse(o => {
+      if (o.isMesh) {
+        o.material = o.material.clone();
+        o.material.transparent = true;
+        o.material.opacity = 0.32 * (0.55 + 0.45 * t);
+        o.material.depthWrite = false;
+      }
+    });
+    g.position.set(0, 0, THREE.MathUtils.lerp(fromZ, toZ, t));
+    scene.add(g);
+    ghostPool.push({ group: g, life: 0.45 });
+  }
+}
+function updateGhosts(dt) {
+  for (let i = ghostPool.length - 1; i >= 0; i--) {
+    const gh = ghostPool[i];
+    gh.life -= dt;
+    const t = Math.max(0, gh.life / 0.45);
+    gh.group.traverse(o => { if (o.isMesh && o.material) o.material.opacity = 0.32 * t; });
+    if (gh.life <= 0) { scene.remove(gh.group); ghostPool.splice(i, 1); }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2615,8 +2706,8 @@ function drawOverlay() {
   octx.clearRect(0,0,innerWidth,innerHeight);
   if (phase === PHASE.SELECT) drawSelectRing();
   else if (phase === PHASE.CHARGE) drawChargeRing();
-  else if (phase === PHASE.COUNTER) drawCounterRing();
-  else if (phase === PHASE.PREEMPT) drawPreemptRing();
+  else if (phase === PHASE.COUNTER) drawClashRing(false);
+  else if (phase === PHASE.PREEMPT) drawClashRing(true);
 }
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
@@ -2701,50 +2792,60 @@ function drawChargeRing() {
   octx.fillText(frac>=PERFECT_FRAC ? '💥 放下手！' : '👊 充能…', x, y);
 }
 // 反击扩散圆环（Boss 升龙挥空）：圆环由中心向四周扩散填充，填满瞬间（±50ms）出拳 = 完美反击
-function drawCounterRing() {
+// ⚡🥊 统一圆环判定 UI（抢占先机 / 防守反击通用）：白色外圈 + 蓝紫渐变粒子从外向内收拢填充 + 完美时机金色高亮弧
+// 判定命中后圆环整体金色闪烁，上方弹出 FIRST STRIKE / COUNTER STRIKE 大字
+function drawClashRing(isPreempt) {
   const el = performance.now() - phaseStart;
-  const frac = Math.min(1, el / COUNTER_MS);
+  const winMs = isPreempt ? PREEMPT_MS : COUNTER_MS;
+  const resolved = isPreempt ? preemptResolved : counterResolved;
+  const result = isPreempt ? preemptResult : counterResult;
+  const hit = resolved && (result === 'hit' || result === 'perfect');
+  const frac = Math.min(1, el / winMs);
   const r = 44;
   const x = innerWidth/2, y = innerHeight/2 - 60;
-  // 基准外环
-  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2); octx.strokeStyle='#ffffff22'; octx.lineWidth=9; octx.stroke();
-  // 完美时机高亮弧（填满瞬间前后 ±COUNTER_PERFECT_MS）
-  const pFrom = Math.max(0, 1 - COUNTER_PERFECT_MS/COUNTER_MS);
-  octx.beginPath(); octx.arc(x,y,r,-Math.PI/2+Math.PI*2*pFrom, -Math.PI/2+Math.PI*2); octx.strokeStyle='#ffd84d99'; octx.lineWidth=9; octx.stroke();
-  // 由中心向四周扩散的填充圆
-  const fr = r*frac;
-  octx.beginPath(); octx.arc(x,y,fr,0,Math.PI*2);
-  octx.fillStyle = frac >= 1 ? 'rgba(255,216,77,0.40)' : 'rgba(255,140,60,0.26)';
-  octx.fill();
-  octx.fillStyle='#fff'; octx.font='bold 15px sans-serif'; octx.textAlign='center'; octx.textBaseline='middle';
-  octx.fillText(frac >= 1 ? '💥 现在出拳！' : '🥊 填满时出拳！', x, y);
-  // 剩余时间
-  const remain = Math.max(0, (COUNTER_MS - el)/1000);
-  octx.font='bold 20px sans-serif'; octx.fillStyle='#ffd84d';
-  octx.fillText(remain.toFixed(1)+'s', x, y - r - 26);
-}
-// ⚡ 抢占蓝→金圆环（剪刀对拼慢动作）：白色外圈基准 + 蓝→金粒子从外向内填充收拢
-function drawPreemptRing() {
-  const el = performance.now() - phaseStart;
-  const frac = Math.min(1, el / PREEMPT_MS);
-  const r = 44;
-  const x = innerWidth/2, y = innerHeight/2 - 60;
+  // 命中结果：金色闪烁 0.6s
+  const pulse = hit ? (0.6 + 0.4 * Math.sin(performance.now() / 60)) : 1;
   // 白色外圈基准
-  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2); octx.strokeStyle='#ffffff33'; octx.lineWidth=9; octx.stroke();
-  // 蓝色填充底（从外向内）
+  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2); octx.strokeStyle= hit ? 'rgba(255,216,77,'+(0.7*pulse)+')' : '#ffffff33'; octx.lineWidth=9; octx.stroke();
+  // 蓝紫渐变粒子底（从外向内）
+  const grad = octx.createRadialGradient(x, y, r, x, y, r);
+  grad.addColorStop(0, 'rgba(139,92,246,0.02)');
+  grad.addColorStop(0.7, 'rgba(78,150,255,0.18)');
+  grad.addColorStop(1, 'rgba(255,255,255,0.10)');
   octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2);
-  octx.fillStyle = frac >= 1 ? 'rgba(255,200,60,0.40)' : 'rgba(78,201,255,0.22)';
+  octx.fillStyle = hit ? 'rgba(255,216,77,'+(0.30*pulse)+')' : grad;
   octx.fill();
-  // 填充前沿：从外向内收拢的蓝→金环
-  const fr = r*(1-frac);
-  octx.beginPath(); octx.arc(x,y,fr,0,Math.PI*2);
-  octx.strokeStyle = frac >= 1 ? '#ffc83c' : '#4ec9ff';
-  octx.lineWidth = 6; octx.stroke();
+  // 完美时机高亮弧（填满瞬间前后）
+  const pFrom = Math.max(0, 1 - (isPreempt ? 0 : COUNTER_PERFECT_MS/COUNTER_MS));
+  if (!isPreempt) {
+    octx.beginPath(); octx.arc(x,y,r,-Math.PI/2+Math.PI*2*pFrom, -Math.PI/2+Math.PI*2); octx.strokeStyle='#ffd84d99'; octx.lineWidth=9; octx.stroke();
+  }
+  // 填充前沿：从外向内收拢的蓝→金环（未命中时显示进度）
+  if (!hit) {
+    const fr = r*(1-frac);
+    octx.beginPath(); octx.arc(x,y,fr,0,Math.PI*2);
+    octx.strokeStyle = frac >= 1 ? '#ffc83c' : '#4ec9ff';
+    octx.lineWidth = 6; octx.stroke();
+  }
   octx.fillStyle='#fff'; octx.font='bold 15px sans-serif'; octx.textAlign='center'; octx.textBaseline='middle';
-  octx.fillText(frac >= 1 ? '💥 现在出拳！' : '⚡ 填满前出拳！', x, y);
-  const remain = Math.max(0, (PREEMPT_MS - el)/1000);
-  octx.font='bold 20px sans-serif'; octx.fillStyle='#4ec9ff';
-  octx.fillText(remain.toFixed(1)+'s', x, y - r - 26);
+  octx.fillText(hit ? (isPreempt ? '💥 FIRST STRIKE！' : '💥 COUNTER STRIKE！') : (isPreempt ? '⚡ 填满前出拳！' : '🥊 填满时出拳！'), x, y);
+  // 金色结果大字
+  if (hit) {
+    const title = isPreempt ? 'FIRST STRIKE' : 'COUNTER STRIKE';
+    octx.font='bold 46px sans-serif';
+    octx.fillStyle='rgba(0,0,0,0.45)';
+    octx.fillText(title, x+2, y+2);
+    octx.fillStyle='rgba(255,216,77,'+(0.9*pulse)+')';
+    octx.fillText(title, x, y);
+    octx.font='bold 16px sans-serif';
+    octx.fillStyle='rgba(255,255,255,0.9)';
+    octx.fillText(isPreempt ? '⚡ 抢占成功！' : '🥊 反击命中！', x, y + 34);
+  } else if (!resolved) {
+    // 剩余时间
+    const remain = Math.max(0, (winMs - el)/1000);
+    octx.font='bold 20px sans-serif'; octx.fillStyle='#4ec9ff';
+    octx.fillText(remain.toFixed(1)+'s', x, y - r - 26);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2956,6 +3057,7 @@ const SFX = {
   tick: () => { tone(320, 0.05, 'square', 0.06); },
   heartbeat: () => { tone(90, 0.1, 'sine', 0.5); tone(70, 0.12, 'sine', 0.4, 0.08); },
   chargeStart: () => { tone(220, 0.5, 'sine', 0.15, 0, 660); },
+  zap: () => { tone(1400, 0.18, 'square', 0.1, 0, 300); tone(2200, 0.12, 'sawtooth', 0.06, 0.03, 800); noise(0.12, 0.15, 6000); },
   perfect: () => { tone(880, 0.1, 'triangle', 0.22); tone(1320, 0.22, 'triangle', 0.18, 0.07); noise(0.15, 0.18, 5000); },
   punch: () => { noise(0.12, 0.25, 1200); tone(160, 0.1, 'square', 0.18); },
   hit: () => { noise(0.18, 0.3, 900); tone(120, 0.15, 'square', 0.22, 0, 60); },
@@ -3068,11 +3170,21 @@ window.addEventListener('resize', () => {
 // ═══════════════════════════════════════════════════════════
 overlay.width = innerWidth; overlay.height = innerHeight;
 let lastTime = performance.now();
+// ⚡🥊 统一时间缩放：抢占/反击判定窗口前 0.5 倍慢动作（视觉约 1.5s）→ 0.5s 内 1.2 倍加速回放 → 正常
+// 判定逻辑始终走真实时钟（performance.now），timeScale 只影响渲染/动画速率
+function timeScale() {
+  if (phase !== PHASE.PREEMPT && phase !== PHASE.COUNTER) return 1;
+  const el = performance.now() - phaseStart;
+  const slowReal = SLOW_VISUAL_MS * PREEMPT_SLOW;   // 慢动作真实时长（视觉 1.5s × 0.5）
+  if (el < slowReal) return PREEMPT_SLOW;           // 慢动作判定
+  if (el < slowReal + BOOST_MS) return BOOST_SPEED; // 加速回放（反差）
+  return 1;
+}
 function loop(now) {
   const rawDt = Math.min(0.05, (now-lastTime)/1000);
   lastTime = now;
-  // ⚡ 慢动作抢占先机：PREEMPT 阶段渲染时间缩放 0.5 倍（判定仍走真实时钟）
-  const dt = rawDt * (phase === PHASE.PREEMPT ? PREEMPT_SLOW : 1);
+  // ⚡🥊 统一时间缩放：抢占/反击判定 0.5 倍慢动作 → 0.5s 内 1.2 倍加速回放 → 正常（判定仍走真实时钟）
+  const dt = rawDt * timeScale();
 
   if (DEMO) demoPoses();
 
@@ -3110,6 +3222,9 @@ function loop(now) {
   // 更新虚拟形象（固定站位）
   players.forEach(p => { if (p.active) updateAvatar(p, dt); });
 
+  // 💨 闪避残影淡出
+  updateGhosts(dt);
+
   // 特效与过肩相机
   updateParticles(dt);
   updateSpeedLines(dt);
@@ -3131,6 +3246,8 @@ requestAnimationFrame(loop);
 window.__game = () => ({
   phase,
   phaseStart,
+  phaseElapsed: performance.now() - phaseStart,
+  timeScaleNow: (phase === PHASE.PREEMPT || phase === PHASE.COUNTER) ? timeScale() : 1,
   round,
   bossHp,
   bossMoves,
@@ -3148,8 +3265,10 @@ window.__game = () => ({
   phaseStart,
   chargeFrac: nowChargeFrac(),
   counter: { ms: COUNTER_MS, perfectMs: COUNTER_PERFECT_MS, resolved: counterResolved, result: counterResult, frac: phase===PHASE.COUNTER ? Math.min(1,(performance.now()-phaseStart)/COUNTER_MS) : 0 },
-  player: player ? { active:player.active, alive:player.alive, hp:player.hp, move:player.move, combo:player.combo, gesture:player.gesture, gestureHoldStart:player.gestureHoldStart, lastConfirm:player.lastConfirm, punchKeyed:player.punchKeyed, visible:player.avatar.group.visible, posZ: player.avatar.group.position.z, clashZ: player.clashZ } : null,
+  preempt: { ms: PREEMPT_MS, resolved: preemptResolved, result: preemptResult, frac: phase===PHASE.PREEMPT ? Math.min(1,(performance.now()-phaseStart)/PREEMPT_MS) : 0 },
+  player: player ? { active:player.active, alive:player.alive, hp:player.hp, move:player.move, combo:player.combo, gesture:player.gesture, gestureHoldStart:player.gestureHoldStart, lastConfirm:player.lastConfirm, punchKeyed:player.punchKeyed, visible:player.avatar.group.visible, posZ: player.avatar.group.position.z, clashZ: player.clashZ, animActive: player.animState ? player.animState.active : false, animMove: player.animState ? player.animState.move : null } : null,
   boss: { alive: bossHp>0, deathT: boss.deathT, hitFlashT: boss.hitFlashT, posZ: boss.group.position.z, clashZ: boss.clashZ },
+  cam: { pos: camera.position.toArray() },
   judgeStats: { playerDmg: roundPlayerDmg, bossDmg: roundBossDmg },
   floats: floatPool.map(f => { const img = f.sprite.material.map ? f.sprite.material.map.image : null; return { text: (img && img.__text) || '?', texW: img?img.width:0, texH: img?img.height:0, scale: [f.sprite.scale.x, f.sprite.scale.y] }; }),
 });
