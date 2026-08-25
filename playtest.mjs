@@ -118,23 +118,22 @@ console.log('\n========== 五、Boss 升龙命中消耗 Boss 架势（对称） 
   check('Boss升龙命中：玩家受4伤害(2+2架势)', j.hp === 6, `hp=${j.hp}`);
 }
 
-console.log('\n========== 六、多段连招的架势累积节奏（体感观察） ==========');
+console.log('\n========== 六、多段连招的架势累积节奏（体感优化验证） ==========');
 {
-  // 5段剪刀 vs 5段石头：观察架势是否每段累积（潜在体感问题）
+  // 5段剪刀 vs 5段石头：验证「一套连招最多 +1 格架势」，避免瞬间攒满
   await page.evaluate(() => {
     window.__play.startGame();
     window.__play.setCharges({ p: 0, b: 0 });
     window.__play.setBossMoves([0,0,0,0,0]);
     window.__play.forceSelect(1);
   });
-  let lastP = 0;
+  let lastP = -1;
   for (let i = 0; i < 5; i++) {
     await page.waitForTimeout(250);
     const c = await page.evaluate(() => window.__play.getCharges());
     if (c.p !== lastP) { observe(`第${i}段后玩家架势`, `${lastP}→${c.p}`); lastP = c.p; }
   }
-  check('多段连招：一次剪刀连招架势累积不超过上限3', lastP <= 3, `lastP=${lastP}`);
-  observe('多段连招：玩家架势最终值', lastP);
+  check('多段连招：一套剪刀连招架势只+1(0→1)', lastP === 1, `lastP=${lastP}`);
 }
 
 console.log('\n========== 七、10轮完整对局回归（AI 自动对战） ==========');

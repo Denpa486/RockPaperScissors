@@ -580,6 +580,7 @@ let _origRandom = Math.random;   // playtest 用：保存原始随机函数
 let CHARGE_MAX = 3;              // 架势条上限（可在开发者面板调整）
 let playerCharge = 0;            // 玩家架势条当前值
 let bossCharge = 0;              // Boss 架势条当前值
+let chargeGainedThisRound = false; // 每回合架势累积上限标记（一套连招最多 +1 格，避免连招瞬间攒满）
 // 闪避联动：闪避成功 → 下回合攻击 +1；失败 → 下回合攻击 -1
 // 闪避可躲一切攻击（剪刀/升龙），有架势→100%成功并扣 1 架势；无架势→50%，失败受伤害+攻击-1
 let nextAtkMod = 0;              // 玩家下回合攻击修正（闪避联动）
@@ -1796,6 +1797,7 @@ function startRound() {
   counterResolved = false; counterResult = null; counterPunched = false; counterSeg = -1;
   preemptResolved = false; preemptPunched = false; preemptResult = null; preemptSeg = -1;
   dodgeResolved = false; nextAtkMod = 0; bossNextAtkMod = 0;
+  chargeGainedThisRound = false;   // 每回合架势累积限速
   window.__lastJudge = {};   // playtest 判定记录槽（由闪避分支注入）
   // ⚔️ 架势条：跨回合累积，攻击结算时消耗
   bossMoves = bossChooseMoves(round);   // Boss 5 招固定套路
@@ -2096,9 +2098,10 @@ function judgeSegment(seg) {
       break;
     case JUDGE_RESULT.PLAYER_WIN:
       applyBossDmg(j.dmgB, '#ffc107');
-      // ⚔️ Boss 架势条累积：Boss 剪刀打中玩家石头（被玩家格挡）→ Boss 架势 +1
-      if (bMove === MOVE.SCISSORS && pMove === MOVE.STONE && bossCharge < CHARGE_MAX) {
+      // ⚔️ Boss 架势条累积：Boss 剪刀打中玩家石头（被玩家格挡）→ Boss 架势 +1（每回合限 +1 格）
+      if (bMove === MOVE.SCISSORS && pMove === MOVE.STONE && bossCharge < CHARGE_MAX && !chargeGainedThisRound) {
         bossCharge += 1;
+        chargeGainedThisRound = true;
         spawnFloat(midPos, `🔴 Boss 架势条 +1 (${bossCharge})`, '#ff6b6b');
         sfx('perfect');
       }
@@ -2113,9 +2116,10 @@ function judgeSegment(seg) {
       break;
     case JUDGE_RESULT.PLAYER_STUN:
       applyPlayerDmg(j.dmgP, '#8b5cf6');
-      // ⚔️ 架势条累积：玩家剪刀打中 Boss 石头（被格挡）→ +1
-      if (pMove === MOVE.SCISSORS && bMove === MOVE.STONE && playerCharge < CHARGE_MAX) {
+      // ⚔️ 架势条累积：玩家剪刀打中 Boss 石头（被格挡）→ +1（每回合限 +1 格）
+      if (pMove === MOVE.SCISSORS && bMove === MOVE.STONE && playerCharge < CHARGE_MAX && !chargeGainedThisRound) {
         playerCharge += 1;
+        chargeGainedThisRound = true;
         spawnFloat(midPos, `⚔️ 架势条 +1 (${playerCharge})`, '#ffd84d');
         sfx('perfect');
       }
