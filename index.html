@@ -106,6 +106,11 @@
   #boss-hp-bar { flex: 1; height: 14px; border-radius: 7px; background: #1a1a22; border: 1px solid #ff6b6b33; overflow: hidden; }
   #boss-hp-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff6b6b, #ffc107); transition: width 0.4s ease; }
   #boss-hp-text { color: #ffb3b3; font-size: 12px; font-weight: 600; min-width: 42px; text-align: right; }
+  /* 🔴 Boss 架势条 */
+  #boss-charge-hud { display: flex; align-items: center; gap: 8px; width: 100%; background: rgba(14,14,24,0.6); border: 1px solid #ff6b6b33; border-radius: 8px; padding: 4px 10px; }
+  #boss-charge-bar { flex: 1; height: 8px; border-radius: 5px; background: #1a1a22; border: 1px solid #ff6b6b22; overflow: hidden; }
+  #boss-charge-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #ff6b6b, #ffc107); transition: width 0.35s ease; box-shadow: 0 0 8px rgba(255,107,107,0.6); }
+  #boss-charge-text { color: #ffb3b3; font-size: 12px; font-weight: 700; min-width: 28px; text-align: right; }
   /* ⚔️ 架势条（屏幕下方，蓄力进度） */
   #charge-hud { position: fixed; bottom: 92px; left: 50%; transform: translateX(-50%); width: min(300px, 60vw); display: flex; align-items: center; gap: 8px; z-index: 10; pointer-events: none; background: rgba(14,14,24,0.85); border: 1px solid #ffd84d33; border-radius: 8px; padding: 5px 10px; }
   #charge-bar { flex: 1; height: 9px; border-radius: 5px; background: #1a1a22; border: 1px solid #ffd84d22; overflow: hidden; }
@@ -307,9 +312,10 @@
     <div class="tut-rules" style="border:none;background:none;padding:0 0 6px;margin-bottom:14px;">
       <span class="tr-item">🕐 每回合连摆 5 招组成连招（🪨✂️🐉💨 可重复），每招保持动作 1 秒确认（屏幕有进度提示）</span><br>
       <span class="tr-item">⚡ 连招含剪刀/升龙时出现充能圆环，接近满格时放下手臂 = 完美连招（每个攻击段 +1 伤害）</span><br>
-      <span class="tr-item">💨 闪避躲开 Boss 升龙 🐉 触发反击窗口：手臂挥过肩高出拳 = 反击成功（Boss -1 血），圆环填满瞬间 = 完美反击（Boss -2 血）</span><br>
+      <span class="tr-item">💨 闪避可躲一切攻击（✂️剪刀/🐉升龙）：有架势 → 100% 躲开并扣 1 架势；无架势 → 50% 概率躲开；失败则受伤害且下回合攻击 -1</span><br>
+      <span class="tr-item">🐉 闪避躲开 Boss 升龙触发反击窗口：手臂挥过肩高出拳 = 反击成功（Boss -1 血），圆环填满瞬间 = 完美反击（Boss -2 血）</span><br>
       <span class="tr-item">✨ 剪刀 vs 剪刀对拼触发「抢占先机」慢动作：蓝金圆环填满前出拳 = 抢占 2 点伤害</span><br>
-      <span class="tr-item">⚔️ 剪刀 ✂️ 打中石头 🪨 累积架势条，下回合攻击每格 +1 伤害；闪避成功/失败影响下回合攻击</span><br>
+      <span class="tr-item">⚔️ 剪刀 ✂️ 打中石头 🪨 累积架势条（下回合攻击每格 +1 伤害）；闪避成功 → 攻击 +1 / 失败 → 攻击 -1；Boss 同样拥有架势与闪避</span><br>
       <span class="tr-item">🎥 全程体感操作，键盘仅作备用（1石头 2剪刀 3升龙 4闪避，连按凑满 5 招）</span>
     </div>
     <button id="tut-start">▶ 开始对决</button>
@@ -362,6 +368,12 @@
     <span id="boss-hp-label">🔴 红方拳手</span>
     <div id="boss-hp-bar"><div id="boss-hp-fill"></div></div>
     <span id="boss-hp-text">20/20</span>
+  </div>
+  <!-- 🔴 Boss 架势条（与玩家对称：Boss 闪避消耗 / 剪刀被格挡累积） -->
+  <div id="boss-charge-hud">
+    <span class="charge-label">🔴 架势</span>
+    <div id="boss-charge-bar"><div id="boss-charge-fill"></div></div>
+    <span id="boss-charge-text">0/3</span>
   </div>
 </div>
 
@@ -564,10 +576,14 @@ let execLen = 0;        // EXECUTE 段数（= 连招长度，至少 1）
 let bossHurtDone = false; // 本回合 Boss 是否已对玩家造成过一次伤害
 
 // ⚔️ 架势条系统：剪刀打中石头 → +1；下回合攻击（剪刀/升龙）结算 +1/格
+let _origRandom = Math.random;   // playtest 用：保存原始随机函数
 let CHARGE_MAX = 3;              // 架势条上限（可在开发者面板调整）
 let playerCharge = 0;            // 玩家架势条当前值
+let bossCharge = 0;              // Boss 架势条当前值
 // 闪避联动：闪避成功 → 下回合攻击 +1；失败 → 下回合攻击 -1
-let nextAtkMod = 0;              // 下回合攻击修正（+加成 / -减弱），本回合结算后清零
+// 闪避可躲一切攻击（剪刀/升龙），有架势→100%成功并扣 1 架势；无架势→50%，失败受伤害+攻击-1
+let nextAtkMod = 0;              // 玩家下回合攻击修正（闪避联动）
+let bossNextAtkMod = 0;          // Boss 下回合攻击修正（Boss 闪避联动，作用于 Boss 对玩家攻击）
 let dodgeResolved = false;       // 闪避 vs 剪刀 判定是否已结算
 // 慢动作抢占先机：剪刀 vs 剪刀 → PREEMPT 窗口（蓝→金圆环）
 let preemptResolved = false;
@@ -1779,7 +1795,8 @@ function startRound() {
   execSeg = 0; execLen = 0; bossHurtDone = false;
   counterResolved = false; counterResult = null; counterPunched = false; counterSeg = -1;
   preemptResolved = false; preemptPunched = false; preemptResult = null; preemptSeg = -1;
-  dodgeResolved = false; nextAtkMod = 0;
+  dodgeResolved = false; nextAtkMod = 0; bossNextAtkMod = 0;
+  window.__lastJudge = {};   // playtest 判定记录槽（由闪避分支注入）
   // ⚔️ 架势条：跨回合累积，攻击结算时消耗
   bossMoves = bossChooseMoves(round);   // Boss 5 招固定套路
   nextBossMove = bossMoves[0];
@@ -1787,7 +1804,7 @@ function startRound() {
   roundPlayerDmg = 0; roundBossDmg = 0;
   boss.hitFlashT = 0;
   setPhase(PHASE.SELECT);
-  setMessage(`第 ${round} 回合 · 连摆 5 招组成连招（🪨✂️🐉💨 可重复），倒计时自动确认\n🪨克✂️ · 🐉破🪨 · 💨躲🐉 · 连续攻击可叠伤害`, true);
+  setMessage(`第 ${round} 回合 · 连摆 5 招组成连招（🪨✂️🐉💨 可重复），倒计时自动确认\n🪨克✂️ · 🐉破🪨 · 💨闪避可躲一切攻击（有架势必躲扣1，无架势50%）· 连续攻击可叠伤害`, true);
 }
 function setMessage(t, small=false) { messageBox.textContent = t; messageBox.className = small?'small':''; }
 
@@ -1934,16 +1951,6 @@ function judgeSegment(seg) {
   if (pMove === undefined || bMove === undefined) return;
   // 🥊 独立反击系统：本段闪避躲开 Boss 升龙 → 不直接结算伤害，
   // 进入反击窗口（圆环由中心向四周扩散填充），挥拳时机决定反击伤害
-  if (pMove === MOVE.DODGE && bMove === MOVE.DRAGON) {
-    playerHistory.push(pMove);
-    counterResolved = false; counterResult = null; counterPunched = false;
-    counterSeg = seg;               // 记录触发反击的段，反击后继续剩余招式
-    if (player) player.gestureHoldStart = 0; // 重置手势计时，避免反击挥拳瞬间判定
-    setPhase(PHASE.COUNTER);
-    setMessage('💨 闪避躲开 Boss 升龙！看准扩散圆环，填满瞬间挥拳反击！', true);
-    sfx('chargeStart');
-    return;
-  }
   // ⚡ 慢动作抢占先机：剪刀 vs 剪刀对拼 → 进入慢动作蓝→金圆环窗口，填满前出拳 = 抢占 2 伤害
   if (pMove === MOVE.SCISSORS && bMove === MOVE.SCISSORS) {
     playerHistory.push(pMove);
@@ -1955,20 +1962,29 @@ function judgeSegment(seg) {
     sfx('chargeStart');
     return;
   }
-  const j = JUDGE_TABLE[pMove][bMove];
   const playerPos = new THREE.Vector3(0, 2.6, PLAYER_Z);
   const bossPos = new THREE.Vector3(0, 2.6, BOSS_Z);
   const midPos = new THREE.Vector3(0, 2.4, (PLAYER_Z + BOSS_Z)/2);
+  const j = JUDGE_TABLE[pMove][bMove];   // 数据驱动判定表（闪避特殊分支在下方提前 return）
   let end = false;
   const applyPlayerDmg = (dmg, color) => {
     if (dmg <= 0) return;
     if (CHEAT.god) { spawnFloat(playerPos, '🛡️ 无敌', '#4ec9ff'); return; }
     if (bossHurtDone) return;   // Boss 一回合只结算一次对玩家伤害
     bossHurtDone = true;
-    player.hp = Math.max(0, player.hp - dmg);
-    roundBossDmg += dmg;
+    let real = dmg;
+    // ⚔️ Boss 架势条：Boss 攻击招（剪刀/升龙）打中时消耗全部架势，每格 +1 伤害
+    if (bMove === MOVE.SCISSORS || bMove === MOVE.DRAGON) {
+      real += bossCharge;
+      bossCharge = 0;
+    }
+    // 💨 Boss 闪避联动：Boss 闪避成功 +1 / 失败 -1，本段攻击结算后消耗
+    real += bossNextAtkMod;
+    bossNextAtkMod = 0;
+    player.hp = Math.max(0, player.hp - real);
+    roundBossDmg += real;
     player.hitFlashT = 0.25;
-    spawnFloat(playerPos, `-${dmg}`, color);
+    spawnFloat(playerPos, `-${real}`, color);
     updatePlayerHp(player);
     sfx('hurt');
     if (player.hp <= 0) end = true;
@@ -1995,30 +2011,72 @@ function judgeSegment(seg) {
     sfx(pMove===MOVE.DRAGON?'flame':'hit');
     if (bossHp <= 0) end = true;
   };
-  // 💨 闪避 vs 剪刀 判定（概率 + 联动）：玩家闪避或 Boss 闪避都走这里
+  // 💨 闪避 vs 升龙 判定（统一对称闪避）：闪避躲 Boss 升龙 → 成功进反击窗口，失败受升龙伤害
+  // 规则：有架势 → 100% 成功（扣 1 架势）；无架势 → 50%；失败受伤害 + 下回合攻击 -1
+  if (pMove === MOVE.DODGE && bMove === MOVE.DRAGON) {
+    playerHistory.push(pMove);
+    const rate = playerCharge >= 1 ? 1 : 0.5;
+    if (Math.random() < rate) {
+      // 闪避成功：扣架势（有架势时）、下回合攻击 +1、进入反击窗口
+      if (playerCharge >= 1) playerCharge -= 1;
+      nextAtkMod = 1;
+      spawnFloat(playerPos, '💨 完美闪避！', '#69f0ae');
+      spawnBurst(playerPos, 0x69f0ae, 18, 4);
+      sfx('perfect');
+      counterResolved = false; counterResult = null; counterPunched = false;
+      counterSeg = seg;               // 记录触发反击的段，反击后继续剩余招式
+      if (player) player.gestureHoldStart = 0; // 重置手势计时，避免反击挥拳瞬间判定
+      setPhase(PHASE.COUNTER);
+      setMessage('💨 闪避躲开 Boss 升龙！看准扩散圆环，填满瞬间挥拳反击！', true);
+      sfx('chargeStart');
+      if (window.__lastJudge) window.__lastJudge = { scene: 'pDodgeDragon', success: true, pHp: player.hp, pCharge: playerCharge, pMod: nextAtkMod };
+    } else {
+      // 闪避失败：受升龙伤害 + 下回合攻击 -1
+      applyPlayerDmg(DMG_DRAGON, '#ff6b6b');
+      nextAtkMod = -1;
+      addShake(0.5);
+      spawnFloat(playerPos, '闪避失败…', '#ff6b6b');
+      if (end) { if (bossHp <= 0) setPhase(PHASE.VICTORY); else setPhase(PHASE.GAMEOVER); }
+      if (window.__lastJudge) window.__lastJudge = { scene: 'pDodgeDragon', success: false, pHp: player.hp, pCharge: playerCharge, pMod: nextAtkMod };
+    }
+    return;
+  }
+  // 💨 闪避 vs 剪刀 判定（统一对称闪避）：玩家闪避或 Boss 闪避都走这里
+  // 规则：闪避方可躲一切攻击；有架势 → 100% 成功并扣 1 架势；无架势 → 50%；失败受伤害+下回合攻击-1
   if ((pMove === MOVE.DODGE && bMove === MOVE.SCISSORS) || (pMove === MOVE.SCISSORS && bMove === MOVE.DODGE)) {
     const playerDodges = pMove === MOVE.DODGE;
     if (playerDodges) {
-      // 玩家闪避躲 Boss 剪刀：架势条≥1 → 100%，否则 50%
+      // 玩家闪避躲 Boss 剪刀
       const rate = playerCharge >= 1 ? 1 : 0.5;
       if (Math.random() < rate) {
+        if (playerCharge >= 1) playerCharge -= 1;   // 成功：扣 1 架势
         nextAtkMod = 1;   // 成功：免疫伤害 + 下回合攻击 +1
         spawnFloat(playerPos, '💨 完美闪避！', '#69f0ae');
         spawnBurst(playerPos, 0x69f0ae, 18, 4);
         sfx('perfect');
+        if (window.__lastJudge) window.__lastJudge = { scene: 'pDodgeScissor', success: true, pHp: player.hp, pCharge: playerCharge, pMod: nextAtkMod };
       } else {
         applyPlayerDmg(DMG_SCISSORS, '#ff6b6b');  // 失败：受剪刀伤害
         nextAtkMod = -1;  // 下回合攻击 -1
         addShake(0.4);
         spawnFloat(playerPos, '闪避失败…', '#ff6b6b');
+        if (window.__lastJudge) window.__lastJudge = { scene: 'pDodgeScissor', success: false, pHp: player.hp, pCharge: playerCharge, pMod: nextAtkMod };
       }
     } else {
-      // Boss 闪避躲玩家剪刀：50% 躲开，否则被命中
-      if (Math.random() < 0.5) {
-        spawnFloat(midPos, 'Boss 闪避！', '#8b5cf6');
+      // Boss 闪避躲玩家剪刀（对称）
+      const rate = bossCharge >= 1 ? 1 : 0.5;
+      if (Math.random() < rate) {
+        if (bossCharge >= 1) bossCharge -= 1;       // 成功：扣 1 Boss 架势
+        bossNextAtkMod = 1;                          // Boss 下回合攻击 +1
+        spawnFloat(midPos, 'Boss 完美闪避！', '#8b5cf6');
+        spawnBurst(bossPos, 0x8b5cf6, 18, 4);
+        sfx('perfect');
+        if (window.__lastJudge) window.__lastJudge = { scene: 'bDodgeScissor', success: true, bHp: bossHp, bCharge: bossCharge, bMod: bossNextAtkMod };
       } else {
-        applyBossDmg(DMG_SCISSORS, '#ffc107');
-        spawnBurst(bossPos, 0xffd84d, 20, 5);
+        applyBossDmg(DMG_SCISSORS, '#ffc107');       // 失败：受玩家剪刀伤害
+        bossNextAtkMod = -1;                         // Boss 下回合攻击 -1
+        spawnFloat(midPos, 'Boss 闪避失败！', '#ff6b6b');
+        if (window.__lastJudge) window.__lastJudge = { scene: 'bDodgeScissor', success: false, bHp: bossHp, bCharge: bossCharge, bMod: bossNextAtkMod };
       }
     }
     dodgeResolved = true;
@@ -2038,6 +2096,12 @@ function judgeSegment(seg) {
       break;
     case JUDGE_RESULT.PLAYER_WIN:
       applyBossDmg(j.dmgB, '#ffc107');
+      // ⚔️ Boss 架势条累积：Boss 剪刀打中玩家石头（被玩家格挡）→ Boss 架势 +1
+      if (bMove === MOVE.SCISSORS && pMove === MOVE.STONE && bossCharge < CHARGE_MAX) {
+        bossCharge += 1;
+        spawnFloat(midPos, `🔴 Boss 架势条 +1 (${bossCharge})`, '#ff6b6b');
+        sfx('perfect');
+      }
       spawnBurst(bossPos, pMove===MOVE.DRAGON ? 0xff7733 : 0xffd84d, 22, 5); spawnSpeedLines(playerPos, bossPos); addShake(0.4); triggerFlash(0.3);
       if (pMove === MOVE.DRAGON) spawnBurst(bossPos, 0xffaa00, 20, 6, 2.4);   // 升龙火焰拖尾
       spawnFloat(bossPos, j.label, '#ffd84d');
@@ -2423,7 +2487,7 @@ function updatePlayerHp(p) {
 function updateHud() {
   const p = player;
   if (!p) return;
-  // ⚔️ 架势条 UI
+  // ⚔️ 架势条 UI（玩家）
   const cf = document.getElementById('charge-fill');
   const ct = document.getElementById('charge-text');
   if (cf && ct) {
@@ -2432,6 +2496,15 @@ function updateHud() {
     // 闪避联动标记（下回合攻击 +1/-1）提示
     const ch = document.getElementById('charge-hud');
     if (ch) ch.style.borderColor = nextAtkMod > 0 ? '#69f0ae' : nextAtkMod < 0 ? '#ff6b6b' : '#ffd84d33';
+  }
+  // 🔴 Boss 架势条 UI
+  const bcf = document.getElementById('boss-charge-fill');
+  const bct = document.getElementById('boss-charge-text');
+  if (bcf && bct) {
+    bcf.style.width = (bossCharge/CHARGE_MAX*100)+'%';
+    bct.textContent = `${bossCharge}/${CHARGE_MAX}`;
+    const bch = document.getElementById('boss-charge-hud');
+    if (bch) bch.style.borderColor = bossNextAtkMod > 0 ? '#69f0ae' : bossNextAtkMod < 0 ? '#ff6b6b' : '#ff6b6b33';
   }
   const h = HUD[0];
   h.el.classList.toggle('inactive', !p.active);
@@ -3082,14 +3155,35 @@ window.__play = {
       onMoveConfirmed();
     }
   },
+  // playtest 用：指定长度的连招（便于单段精确验证判定）
+  forceSelectLen(move, len) {
+    if (phase === PHASE.SELECT && player) {
+      len = Math.max(1, Math.min(COMBO_LEN, len || COMBO_LEN));
+      player.combo = Array(len).fill(move);
+      player.lastConfirm = performance.now(); player.gestureHoldStart = 0;
+      onMoveConfirmed();
+    }
+  },
   setNextBoss(move) { bossMoves = Array(COMBO_LEN).fill(move); nextBossMove = bossMoves[0]; },
-  setBossMoves(arr) { if (Array.isArray(arr) && arr.length === COMBO_LEN) { bossMoves = arr.slice(); nextBossMove = bossMoves[0]; } },
+  setBossMoves(arr) { if (Array.isArray(arr) && arr.length >= 1 && arr.length <= COMBO_LEN) { bossMoves = arr.slice(); nextBossMove = bossMoves[0]; } },
   forcePunch() { if (player) player.punchKeyed = true; },
   clearPlayerGesture() { lastPoses = []; if (player) player.lm = null; },
   // 测试用：直接判定模拟 landmark 是否「手臂挥过肩」
   armSwung(lm) { return armSwungOverShoulder(lm); },
   // 测试用：注入模拟 landmark 到玩家骨骼（便于自动化验证反击挥拳）
   setLm(arr) { if (player) player.lm = arr; },
+  // playtest 用：直接读写架势条（玩家/Boss）
+  getCharges() { return { p: playerCharge, b: bossCharge, pMod: nextAtkMod, bMod: bossNextAtkMod }; },
+  setCharges(o) {
+    if (o && o.p !== undefined) playerCharge = o.p;
+    if (o && o.b !== undefined) bossCharge = o.b;
+    updateHud();
+  },
+  // playtest 用：替换 Math.random（注入确定性随机，便于复现闪避成败）；传 null 恢复原始
+  setRandom(fn) {
+    Math.random = fn || _origRandom;
+  },
+  getState() { return { phase, round, playerHp: player?player.hp:0, bossHp, playerCharge, bossCharge, nextAtkMod, bossNextAtkMod, playerCombo: player?player.combo:[], bossMoves: bossMoves.slice(), roundPlayerDmg, roundBossDmg, end }; },
 };
 </script>
 </body>
