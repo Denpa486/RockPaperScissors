@@ -298,7 +298,7 @@
 <div id="tutorial-overlay">
   <div class="tut-card">
     <h1>🪨✂️🐉 石头剪刀升龙拳</h1>
-    <div class="tut-sub">像拳击手一样对决：每回合连摆 5 招组成连招 → 倒计时自动确认 → 连招逐招判定</div>
+    <div class="tut-sub">像拳击手一样对决：每回合连摆 5 招组成连招 → 摆满自动确认 → 连招逐招判定</div>
     <div class="tut-gestures">
       <div class="tut-gesture"><span class="tg-emoji">🪨</span><div class="tg-name" style="color:#6fd3ff;">石头</div><div class="tg-desc">双臂交叉护胸<br>克剪刀 · 被升龙破</div></div>
       <div class="tut-gesture"><span class="tg-emoji">✂️</span><div class="tg-name" style="color:#7fffb3;">剪刀</div><div class="tg-desc">双拳前刺<br>克不出招 · 被石头克</div></div>
@@ -319,7 +319,7 @@
       <span class="tr-item">💨 闪避可躲一切攻击（✂️剪刀/🐉升龙）：有架势 → 100% 躲开并扣 1 架势；无架势 → 50% 概率躲开；失败则受伤害且下回合攻击 -1</span><br>
       <span class="tr-item">🐉 闪避躲开 Boss 升龙触发反击窗口：手臂挥过肩高出拳 = 反击成功（Boss -1 血），圆环填满瞬间 = 完美反击（Boss -2 血）</span><br>
       <span class="tr-item">✨ 剪刀 vs 剪刀对拼触发「抢占先机」慢动作：蓝金圆环填满前出拳 = 抢占 2 点伤害</span><br>
-      <span class="tr-item">⚔️ 剪刀 ✂️ 打中石头 🪨 累积架势条（下回合攻击每格 +1 伤害）；闪避成功 → 攻击 +1 / 失败 → 攻击 -1；Boss 同样拥有架势与闪避</span><br>
+      <span class="tr-item">⚔️ 石头 🪨 成功防御剪刀 ✂️ 累积架势条（下回合攻击每格 +1 伤害）；闪避成功 → 攻击 +1 / 失败 → 攻击 -1；Boss 同样拥有架势与闪避</span><br>
       <span class="tr-item">🎥 全程体感操作，键盘仅作备用（1石头 2剪刀 3升龙 4闪避，连按凑满 5 招）</span>
     </div>
     <button id="tut-start">▶ 开始对决</button>
@@ -373,7 +373,7 @@
     <div id="boss-hp-bar"><div id="boss-hp-fill"></div></div>
     <span id="boss-hp-text">20/20</span>
   </div>
-  <!-- 🔴 Boss 架势条（与玩家对称：Boss 闪避消耗 / 剪刀被格挡累积） -->
+  <!-- 🔴 Boss 架势条（与玩家对称：Boss 闪避消耗 / Boss 石头防御成功累积） -->
   <div id="boss-charge-hud">
     <span class="charge-label">🔴 架势</span>
     <div id="boss-charge-bar"><div id="boss-charge-fill"></div></div>
@@ -415,7 +415,6 @@
     <div class="dev-sec-title">🎮 游戏数值建构</div>
     <label>玩家血量 <input type="number" id="dev-maxhp" value="10" min="1" max="99"></label>
     <label>Boss 血量 <input type="number" id="dev-bosshp" value="20" min="1" max="999"></label>
-    <label>选招时间(ms) <input type="number" id="dev-selectms" value="3000" min="2000" step="500"></label>
     <label>充能时间(ms) <input type="number" id="dev-chargems" value="2000" min="800" step="200"></label>
     <label>剪刀伤害 <input type="number" id="dev-dmg-scissors" value="1" min="0" max="20"></label>
     <label>升龙伤害 <input type="number" id="dev-dmg-dragon" value="2" min="0" max="20"></label>
@@ -435,7 +434,6 @@
     <div class="dev-sec-title">💡 作弊模式</div>
     <label><input type="checkbox" id="dev-god"> 🛡️ 玩家无敌（不受伤害）</label>
     <label><input type="checkbox" id="dev-oneshot"> 💥 一击必杀（秒 Boss）</label>
-    <label><input type="checkbox" id="dev-infinite"> ⏱ 无限选招时间</label>
   </div>
   <div class="dev-section">
     <div class="dev-sec-title">🧭 调试</div>
@@ -556,7 +554,7 @@ function bossChooseMoves(round) {
 }
 
 // 作弊模式开关（开发者面板）
-const CHEAT = { god:false, oneShot:false, infinite:false };
+const CHEAT = { god:false, oneShot:false };
 
 // AI 难度：0 简单 / 1 普通 / 2 困难；灵敏度 0低/1中/2高；校准肩宽（归一化）
 let AI_LEVEL = 1;
@@ -582,7 +580,7 @@ let execSeg = 0;        // EXECUTE 当前段索引（连招第几招）
 let execLen = 0;        // EXECUTE 段数（= 连招长度，至少 1）
 let bossHurtDone = false; // 本回合 Boss 是否已对玩家造成过一次伤害
 
-// ⚔️ 架势条系统：剪刀打中石头 → +1；下回合攻击（剪刀/升龙）结算 +1/格
+// ⚔️ 架势条系统：石头成功防御剪刀 → 防御方 +1；下回合攻击（剪刀/升龙）结算 +1/格
 let _origRandom = Math.random;   // playtest 用：保存原始随机函数
 let CHARGE_MAX = 10;             // 架势条上限（可在开发者面板调整）
 let playerCharge = 0;            // 玩家架势条当前值
@@ -788,7 +786,6 @@ let poseModelInfo = '未加载';
 const devPanel = document.getElementById('dev-panel');
 const devMaxHp = document.getElementById('dev-maxhp');
 const devBossHp = document.getElementById('dev-bosshp');
-const devSelectMs = document.getElementById('dev-selectms');
 const devDmgScissors = document.getElementById('dev-dmg-scissors');
 const devDmgDragon = document.getElementById('dev-dmg-dragon');
 const devDmgPreempt = document.getElementById('dev-dmg-preempt');
@@ -796,7 +793,6 @@ const devPreemptMs = document.getElementById('dev-preemptms');
 const devChargeMax = document.getElementById('dev-chargemax');
 const devGod = document.getElementById('dev-god');
 const devOneShot = document.getElementById('dev-oneshot');
-const devInfinite = document.getElementById('dev-infinite');
 const devPoseDebug = document.getElementById('dev-pose-debug');
 
 // 镜像输入 canvas：前置摄像头底层帧未镜像，MediaPipe 对自拍镜像帧识别更好
@@ -814,10 +810,10 @@ const POSE_CONNECTIONS = [
 //  Three.js 场景
 // ═══════════════════════════════════════════════════════════
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d0d18);
@@ -998,9 +994,9 @@ scene.add(ground);
 
 // 观众席荧光棒光点（避免复杂建模，营造暗场舞台氛围）
 const crowdMat = new THREE.MeshBasicMaterial({ color:0x2a4a6a, transparent:true, opacity:0.6 });
-for (let i = 0; i < 42; i++) {
+for (let i = 0; i < 30; i++) {
   const a = Math.random()*Math.PI*2, r = 9 + Math.random()*28;
-  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.32, 6), crowdMat);
+  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.32, 4), crowdMat);
   c.position.set(Math.cos(a)*r, 0.16, OCT_CZ + Math.sin(a)*r);
   scene.add(c);
 }
@@ -1189,7 +1185,7 @@ const PLAYER_STYLES = [
 ];
 
 // 创建胶囊几何体，兼容 THREE.js 版本（<0.165 无 CapsuleGeometry 时使用 Lathe）
-function makeCapsule(r, len, capSegs=4, radialSegs=12) {
+function makeCapsule(r, len, capSegs=2, radialSegs=8) {
   if (typeof THREE.CapsuleGeometry !== 'undefined') {
     return new THREE.CapsuleGeometry(r, len, capSegs, radialSegs);
   }
@@ -1226,7 +1222,7 @@ function createAvatar(styleIndex=0, isBoss=false) {
     return group;
   }
   function jointSphere(parent, r=0.04) {
-    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), jointMat);
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 6, 4), jointMat);
     m.castShadow = true; parent.add(m); return m;
   }
   function outline(mesh, scale=1.08) {
@@ -1241,23 +1237,23 @@ function createAvatar(styleIndex=0, isBoss=false) {
   const root = bone(JOINTS.ROOT, null, null, null, new THREE.Vector3(0,0,0));
   const hips = bone(JOINTS.HIPS, root, null, null, new THREE.Vector3(0, 0.92, 0));
   // 骨盆
-  const pelvisGeo = new THREE.SphereGeometry(0.22, 10, 8);
+  const pelvisGeo = new THREE.SphereGeometry(0.22, 8, 6);
   pelvisGeo.scale(1, 0.65, 0.85);
   const pelvis = new THREE.Mesh(pelvisGeo, whiteMat); pelvis.castShadow=true; hips.add(pelvis); outline(pelvis, 1.06);
   // 脊柱-胸腔（箱型胸廓：横向更宽、肩更壮，呈倒梯形拳击身材）
   const spine = bone(JOINTS.SPINE, hips, null, null, new THREE.Vector3(0, 0.18, 0));
-  const chestGeo = new THREE.SphereGeometry(0.23, 10, 8);
+  const chestGeo = new THREE.SphereGeometry(0.23, 8, 6);
   chestGeo.scale(1.35, 1.1, 0.9);
   const chest = bone(JOINTS.CHEST, spine, chestGeo, whiteMat, new THREE.Vector3(0, 0.34, 0));
   outline(chest.children[0], 1.06);
   // 肩部三角肌（增强出拳时的肩宽轮廓）
-  const lDeltGeo = new THREE.SphereGeometry(0.085, 10, 8);
-  const rDeltGeo = new THREE.SphereGeometry(0.085, 10, 8);
+  const lDeltGeo = new THREE.SphereGeometry(0.085, 8, 6);
+  const rDeltGeo = new THREE.SphereGeometry(0.085, 8, 6);
   // 颈-头（带下巴的圆润头部）
-  const neck = bone(JOINTS.NECK, chest, new THREE.CylinderGeometry(0.08, 0.09, 0.12, 10), whiteMat, new THREE.Vector3(0, 0.38, 0));
-  const head = bone(JOINTS.HEAD, neck, new THREE.SphereGeometry(0.24, 12, 10), whiteMat, new THREE.Vector3(0, 0.24, 0));
+  const neck = bone(JOINTS.NECK, chest, new THREE.CylinderGeometry(0.08, 0.09, 0.12, 8), whiteMat, new THREE.Vector3(0, 0.38, 0));
+  const head = bone(JOINTS.HEAD, neck, new THREE.SphereGeometry(0.24, 8, 6), whiteMat, new THREE.Vector3(0, 0.24, 0));
   outline(head.children[0], 1.06);
-  const chinGeo = new THREE.SphereGeometry(0.13, 10, 8);
+  const chinGeo = new THREE.SphereGeometry(0.13, 8, 6);
   chinGeo.scale(1, 0.8, 0.9);
   const chin = new THREE.Mesh(chinGeo, whiteMat); chin.castShadow = true;
   chin.position.set(0, -0.14, 0.05);
@@ -1267,12 +1263,10 @@ function createAvatar(styleIndex=0, isBoss=false) {
   const lClavicle = bone(JOINTS.L_CLAVICLE, chest, lDeltGeo, whiteMat, new THREE.Vector3(-0.18, 0.18, 0));
   const lShoulder = bone(JOINTS.L_SHOULDER, lClavicle, null, null, new THREE.Vector3(-0.16, 0, 0));
   jointSphere(lShoulder, 0.07);
-  const lUpperArm = bone(JOINTS.L_ELBOW, lShoulder, makeCapsule(0.07, 0.28, 4, 10), whiteMat, new THREE.Vector3(0, -0.22, 0));
-  outline(lUpperArm.children[0], 1.08);
-  const lForeArm = bone(JOINTS.L_WRIST, lUpperArm, makeCapsule(0.065, 0.26, 4, 10), whiteMat, new THREE.Vector3(0, -0.26, 0));
-  outline(lForeArm.children[0], 1.08);
+  const lUpperArm = bone(JOINTS.L_ELBOW, lShoulder, makeCapsule(0.07, 0.28, 2, 8), whiteMat, new THREE.Vector3(0, -0.22, 0));
+  const lForeArm = bone(JOINTS.L_WRIST, lUpperArm, makeCapsule(0.065, 0.26, 2, 8), whiteMat, new THREE.Vector3(0, -0.26, 0));
   // 拳套：圆润的握拳造型（玩家为白盒本色，Boss 为红拳套）
-  const gloveGeo = new THREE.SphereGeometry(0.11, 12, 10);
+  const gloveGeo = new THREE.SphereGeometry(0.11, 8, 6);
   gloveGeo.scale(1, 1.15, 1.2);
   const handMat = isBoss ? gloveMat : whiteMat;
   const lHand = bone(JOINTS.L_HAND, lForeArm, gloveGeo, handMat, new THREE.Vector3(0, -0.17, 0));
@@ -1280,31 +1274,25 @@ function createAvatar(styleIndex=0, isBoss=false) {
   const rClavicle = bone(JOINTS.R_CLAVICLE, chest, rDeltGeo, whiteMat, new THREE.Vector3(0.18, 0.18, 0));
   const rShoulder = bone(JOINTS.R_SHOULDER, rClavicle, null, null, new THREE.Vector3(0.16, 0, 0));
   jointSphere(rShoulder, 0.07);
-  const rUpperArm = bone(JOINTS.R_ELBOW, rShoulder, makeCapsule(0.07, 0.28, 4, 10), whiteMat, new THREE.Vector3(0, -0.22, 0));
-  outline(rUpperArm.children[0], 1.08);
-  const rForeArm = bone(JOINTS.R_WRIST, rUpperArm, makeCapsule(0.065, 0.26, 4, 10), whiteMat, new THREE.Vector3(0, -0.26, 0));
-  outline(rForeArm.children[0], 1.08);
+  const rUpperArm = bone(JOINTS.R_ELBOW, rShoulder, makeCapsule(0.07, 0.28, 2, 8), whiteMat, new THREE.Vector3(0, -0.22, 0));
+  const rForeArm = bone(JOINTS.R_WRIST, rUpperArm, makeCapsule(0.065, 0.26, 2, 8), whiteMat, new THREE.Vector3(0, -0.26, 0));
   const rHand = bone(JOINTS.R_HAND, rForeArm, gloveGeo, handMat, new THREE.Vector3(0, -0.17, 0));
 
   // 左腿
   const lHip = bone(JOINTS.L_HIP, hips, null, null, new THREE.Vector3(-0.12, -0.05, 0));
   jointSphere(lHip, 0.09);
-  const lThigh = bone(JOINTS.L_KNEE, lHip, makeCapsule(0.10, 0.40, 4, 10), whiteMat, new THREE.Vector3(0, -0.28, 0));
-  outline(lThigh.children[0], 1.06);
-  const lShin = bone(JOINTS.L_ANKLE, lThigh, makeCapsule(0.09, 0.40, 4, 10), whiteMat, new THREE.Vector3(0, -0.28, 0));
-  outline(lShin.children[0], 1.06);
+  const lThigh = bone(JOINTS.L_KNEE, lHip, makeCapsule(0.10, 0.40, 2, 8), whiteMat, new THREE.Vector3(0, -0.28, 0));
+  const lShin = bone(JOINTS.L_ANKLE, lThigh, makeCapsule(0.09, 0.40, 2, 8), whiteMat, new THREE.Vector3(0, -0.28, 0));
   const lFoot = bone(JOINTS.L_FOOT, lShin, new THREE.BoxGeometry(0.12, 0.08, 0.25), whiteMat, new THREE.Vector3(0, -0.24, 0.06));
   // 右腿
   const rHip = bone(JOINTS.R_HIP, hips, null, null, new THREE.Vector3(0.12, -0.05, 0));
   jointSphere(rHip, 0.09);
-  const rThigh = bone(JOINTS.R_KNEE, rHip, makeCapsule(0.10, 0.40, 4, 10), whiteMat, new THREE.Vector3(0, -0.28, 0));
-  outline(rThigh.children[0], 1.06);
-  const rShin = bone(JOINTS.R_ANKLE, rThigh, makeCapsule(0.09, 0.40, 4, 10), whiteMat, new THREE.Vector3(0, -0.28, 0));
-  outline(rShin.children[0], 1.06);
+  const rThigh = bone(JOINTS.R_KNEE, rHip, makeCapsule(0.10, 0.40, 2, 8), whiteMat, new THREE.Vector3(0, -0.28, 0));
+  const rShin = bone(JOINTS.R_ANKLE, rThigh, makeCapsule(0.09, 0.40, 2, 8), whiteMat, new THREE.Vector3(0, -0.28, 0));
   const rFoot = bone(JOINTS.R_FOOT, rShin, new THREE.BoxGeometry(0.12, 0.08, 0.25), whiteMat, new THREE.Vector3(0, -0.24, 0.06));
 
   // 胸口核心（仅受击判定点，不是骨骼）
-  const core = new THREE.Mesh(new THREE.SphereGeometry(0.10, 12, 10), glowMat.clone());
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.10, 8, 6), glowMat.clone());
   core.position.set(0, 0.05, 0.28);
   chest.add(core);
 
@@ -1763,7 +1751,7 @@ function setPhase(p) {
   else if (p === PHASE.PREEMPT) { showBanner('抢占先机！', 'white', 'preempt'+round); sfx('zap'); sfx('chargeStart'); }
   const map = {
     [PHASE.WAITING]:['phase-waiting','⏳ 等待开始'],
-    [PHASE.SELECT]:['phase-select','🎯 摆招（倒计时自动确认）'],
+    [PHASE.SELECT]:['phase-select','🎯 摆招（摆满自动确认）'],
     [PHASE.CHARGE]:['phase-charge','⚡ 充能！满格放下手出拳'],
     [PHASE.EXECUTE]:['phase-execute','⚔️ 对决中'],
     [PHASE.COUNTER]:['phase-counter','🥊 反击窗口！'],
@@ -1831,7 +1819,7 @@ function startRound() {
   roundPlayerDmg = 0; roundBossDmg = 0;
   boss.hitFlashT = 0;
   setPhase(PHASE.SELECT);
-  setMessage(`第 ${round} 回合 · 连摆 5 招组成连招（🪨✂️🐉💨 可重复），倒计时自动确认\n🪨克✂️ · 🐉破🪨 · 💨闪避可躲一切攻击（有架势必躲扣1，无架势50%）· 连续攻击可叠伤害`, true);
+  setMessage(`第 ${round} 回合 · 连摆 5 招组成连招（🪨✂️🐉💨 可重复），摆满自动确认\n🪨克✂️ · 🐉破🪨 · 💨闪避可躲一切攻击（有架势必躲扣1，无架势50%）· 连续攻击可叠伤害`, true);
 }
 function setMessage(t, small=false) { messageBox.textContent = t; messageBox.className = small?'small':''; }
 
@@ -1849,7 +1837,7 @@ function tryConfirmGesture(p, now) {
   }
 }
 
-// 选招阶段：连摆 5 招（每招保持 1.5 秒确认，屏幕有进度提示）→ 倒计时结束自动锁定
+// 选招阶段：连摆 5 招（每招保持 1.5 秒确认，屏幕有进度提示）→ 摆满自动锁定，无时间限制
 function updateSelect(dt, now) {
   const p = player;
   if (!p || !p.active || !p.alive) return;
@@ -1867,15 +1855,6 @@ function updateSelect(dt, now) {
     } else {
       tryConfirmGesture(p, now);
     }
-  }
-  const hasAtk = p.combo.some(m => m === MOVE.SCISSORS || m === MOVE.DRAGON);
-  const limit = SELECT_MS + (hasAtk ? 1000 : 0);
-  if (!CHEAT.infinite && now - phaseStart >= limit) {
-    if (p.combo.length === 0) {
-      p.combo.push(p.gesture !== null ? p.gesture : MOVE.DODGE);
-      spawnFloat(new THREE.Vector3(0, 3.1, PLAYER_Z), `${MOVE_ICONS[p.combo[0]]} 超时自动确认`, '#ffffff');
-    }
-    onMoveConfirmed();
   }
 }
 
@@ -2124,11 +2103,11 @@ function judgeSegment(seg) {
       break;
     case JUDGE_RESULT.PLAYER_WIN:
       applyBossDmg(j.dmgB, '#ffc107');
-      // ⚔️ Boss 架势条累积：Boss 剪刀打中玩家石头（被玩家格挡）→ Boss 架势 +1（每回合限 +1 格）
-      if (bMove === MOVE.SCISSORS && pMove === MOVE.STONE && bossCharge < CHARGE_MAX && !chargeGainedThisRound) {
-        bossCharge += 1;
+      // ⚔️ 玩家架势条累积：玩家石头成功防御 Boss 剪刀（克制成功）→ 玩家架势 +1（每回合限 +1 格）
+      if (pMove === MOVE.STONE && bMove === MOVE.SCISSORS && playerCharge < CHARGE_MAX && !chargeGainedThisRound) {
+        playerCharge += 1;
         chargeGainedThisRound = true;
-        spawnFloat(midPos, `🔴 Boss 架势条 +1 (${bossCharge})`, '#ff6b6b');
+        spawnFloat(midPos, `⚔️ 玩家架势条 +1 (${playerCharge})`, '#ffd84d');
         sfx('perfect');
       }
       spawnBurst(bossPos, pMove===MOVE.DRAGON ? 0xff7733 : 0xffd84d, 22, 5); spawnSpeedLines(playerPos, bossPos); addShake(0.4); triggerFlash(0.3);
@@ -2142,11 +2121,11 @@ function judgeSegment(seg) {
       break;
     case JUDGE_RESULT.PLAYER_STUN:
       applyPlayerDmg(j.dmgP, '#8b5cf6');
-      // ⚔️ 架势条累积：玩家剪刀打中 Boss 石头（被格挡）→ +1（每回合限 +1 格）
-      if (pMove === MOVE.SCISSORS && bMove === MOVE.STONE && playerCharge < CHARGE_MAX && !chargeGainedThisRound) {
-        playerCharge += 1;
+      // ⚔️ Boss 架势条累积：Boss 石头成功防御玩家剪刀（克制成功）→ Boss 架势 +1（每回合限 +1 格）
+      if (pMove === MOVE.SCISSORS && bMove === MOVE.STONE && bossCharge < CHARGE_MAX && !chargeGainedThisRound) {
+        bossCharge += 1;
         chargeGainedThisRound = true;
-        spawnFloat(midPos, `⚔️ 架势条 +1 (${playerCharge})`, '#ffd84d');
+        spawnFloat(midPos, `🔴 Boss 架势条 +1 (${bossCharge})`, '#ff6b6b');
         sfx('perfect');
       }
       spawnFloat(playerPos, j.label, '#8b5cf6');
@@ -2587,6 +2566,15 @@ function updateGhosts(dt) {
 // ═══════════════════════════════════════════════════════════
 //  HUD 更新
 // ═══════════════════════════════════════════════════════════
+// DOM 引用缓存（避免每帧 getElementById 查询开销）
+const chargeFill = document.getElementById('charge-fill');
+const chargeText = document.getElementById('charge-text');
+const chargeHud = document.getElementById('charge-hud');
+const playerChargeFill = document.getElementById('player-charge-fill');
+const playerChargeText = document.getElementById('player-charge-text');
+const bossChargeFill = document.getElementById('boss-charge-fill');
+const bossChargeText = document.getElementById('boss-charge-text');
+const bossChargeHud = document.getElementById('boss-charge-hud');
 function updateBossHp() {
   bossHpFill.style.width = (bossHp/MAX_HP_BOSS*100)+'%';
   bossHpText.textContent = `${bossHp}/${MAX_HP_BOSS}`;
@@ -2600,30 +2588,22 @@ function updateHud() {
   const p = player;
   if (!p) return;
   // ⚔️ 架势条 UI（玩家）
-  const cf = document.getElementById('charge-fill');
-  const ct = document.getElementById('charge-text');
-  if (cf && ct) {
-    cf.style.width = (playerCharge/CHARGE_MAX*100)+'%';
-    ct.textContent = `${playerCharge}/${CHARGE_MAX}`;
+  if (chargeFill && chargeText) {
+    chargeFill.style.width = (playerCharge/CHARGE_MAX*100)+'%';
+    chargeText.textContent = `${playerCharge}/${CHARGE_MAX}`;
     // 闪避联动标记（下回合攻击 +1/-1）提示
-    const ch = document.getElementById('charge-hud');
-    if (ch) ch.style.borderColor = nextAtkMod > 0 ? '#69f0ae' : nextAtkMod < 0 ? '#ff6b6b' : '#ffd84d33';
+    if (chargeHud) chargeHud.style.borderColor = nextAtkMod > 0 ? '#69f0ae' : nextAtkMod < 0 ? '#ff6b6b' : '#ffd84d33';
   }
   // ⚔️ 玩家血条上方架势条 UI（与底部架势条同步）
-  const pcf = document.getElementById('player-charge-fill');
-  const pct = document.getElementById('player-charge-text');
-  if (pcf && pct) {
-    pcf.style.width = (playerCharge/CHARGE_MAX*100)+'%';
-    pct.textContent = `${playerCharge}/${CHARGE_MAX}`;
+  if (playerChargeFill && playerChargeText) {
+    playerChargeFill.style.width = (playerCharge/CHARGE_MAX*100)+'%';
+    playerChargeText.textContent = `${playerCharge}/${CHARGE_MAX}`;
   }
   // 🔴 Boss 架势条 UI
-  const bcf = document.getElementById('boss-charge-fill');
-  const bct = document.getElementById('boss-charge-text');
-  if (bcf && bct) {
-    bcf.style.width = (bossCharge/CHARGE_MAX*100)+'%';
-    bct.textContent = `${bossCharge}/${CHARGE_MAX}`;
-    const bch = document.getElementById('boss-charge-hud');
-    if (bch) bch.style.borderColor = bossNextAtkMod > 0 ? '#69f0ae' : bossNextAtkMod < 0 ? '#ff6b6b' : '#ff6b6b33';
+  if (bossChargeFill && bossChargeText) {
+    bossChargeFill.style.width = (bossCharge/CHARGE_MAX*100)+'%';
+    bossChargeText.textContent = `${bossCharge}/${CHARGE_MAX}`;
+    if (bossChargeHud) bossChargeHud.style.borderColor = bossNextAtkMod > 0 ? '#69f0ae' : bossNextAtkMod < 0 ? '#ff6b6b' : '#ff6b6b33';
   }
   const h = HUD[0];
   h.el.classList.toggle('inactive', !p.active);
@@ -2690,9 +2670,6 @@ function updateHud() {
   if (dl) dl.textContent = ['简单','普通','困难'][AI_LEVEL] || '普通';
   const tip = document.getElementById('charge-tip');
   if (tip) tip.classList.toggle('show', phase === PHASE.CHARGE);
-  // 倒计时滴答音效
-  if (phase === PHASE.SELECT) updateSelectSfx(performance.now());
-  else lastTickSecond = -1;
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -2719,20 +2696,9 @@ function roundRect(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 function drawSelectRing() {
-  const el = performance.now() - phaseStart;
   const p = player;
-  const hasAtk = p && p.combo.length > 0 && p.combo.some(m => m===MOVE.SCISSORS || m===MOVE.DRAGON);
-  const limit = SELECT_MS + (hasAtk ? 1000 : 0);
-  const remain = Math.max(0, (limit-el)/1000);
-  const frac = Math.max(0, 1 - el/limit);
-  const r = 30;
-  const x = innerWidth-70, y = innerHeight-130;
-  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2); octx.strokeStyle='#ffffff33'; octx.lineWidth=6; octx.stroke();
-  octx.beginPath(); octx.arc(x,y,r,-Math.PI/2,-Math.PI/2+Math.PI*2*frac); octx.strokeStyle='#4ec9ff'; octx.lineWidth=6; octx.stroke();
-  octx.fillStyle='#fff'; octx.font='bold 18px sans-serif'; octx.textAlign='center'; octx.textBaseline='middle';
-  octx.fillText(remain.toFixed(1), x, y);
 
-  // ── 可视化选招 timer：连招槽位 + 当前招保持确认进度 ──
+  // ── 选招进度：连招槽位 + 当前招保持确认进度 ──
   if (!p || !p.active || !p.alive) return;
   const slotW = 46, slotH = 42, gap = 8;
   const n = p.combo.length;
@@ -2905,9 +2871,6 @@ function initDevPanel() {
     MAX_HP_BOSS = Math.max(1, parseInt(devBossHp.value) || 20);
     updateBossHp();
   });
-  devSelectMs.addEventListener('change', () => {
-    SELECT_MS = Math.max(2000, parseInt(devSelectMs.value) || 3000);
-  });
   const devChargeMs = document.getElementById('dev-chargems');
   if (devChargeMs) devChargeMs.addEventListener('change', () => {
     CHARGE_MS = Math.max(800, parseInt(devChargeMs.value) || 2000);
@@ -2942,7 +2905,6 @@ function initDevPanel() {
   // 作弊模式
   devGod.addEventListener('change', () => { CHEAT.god = devGod.checked; });
   devOneShot.addEventListener('change', () => { CHEAT.oneShot = devOneShot.checked; });
-  devInfinite.addEventListener('change', () => { CHEAT.infinite = devInfinite.checked; });
 
   // 动作按钮
   document.getElementById('dev-skip').addEventListener('click', () => {
@@ -3068,23 +3030,6 @@ const SFX = {
   lose: () => { tone(330, 0.2, 'sawtooth', 0.16); tone(247, 0.2, 'sawtooth', 0.16, 0.16); tone(165, 0.4, 'sawtooth', 0.18, 0.32); },
 };
 function sfx(name) { ensureAudio(); const f = SFX[name]; if (f) f(); }
-// 选招阶段最后 1 秒滴答 + 心跳
-let lastTickSecond = -1;
-function updateSelectSfx(now) {
-  if (phase !== PHASE.SELECT) { lastTickSecond = -1; return; }
-  const p = player;
-  const hasAtk = p && p.combo.length > 0 && p.combo.some(m => m===MOVE.SCISSORS || m===MOVE.DRAGON);
-  const limit = SELECT_MS + (hasAtk ? 1000 : 0);
-  const remain = Math.max(0, (limit - (now-phaseStart))/1000);
-  if (remain <= 1.1) {
-    const sec = Math.floor(remain);
-    if (sec !== lastTickSecond) {
-      lastTickSecond = sec;
-      if (sec <= 0) sfx('heartbeat');
-      else sfx('tick');
-    }
-  }
-}
 
 // ═══════════════════════════════════════════════════════════
 //  身体校准流程（站立展开双臂标定肩宽）+ 灵敏度滑块

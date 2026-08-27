@@ -103,12 +103,12 @@ console.log('\n========== 三、Boss 闪避 vs 玩家剪刀（对称） ========
 
 console.log('\n========== 四、架势累积 ==========');
 {
-  let j = await single(S, [R]); // 玩家剪刀 vs Boss石头 → 玩家架势+1
-  check('玩家剪刀被Boss石头格挡：玩家架势+1(0→1)', j.p === 1, `p=${j.p}`);
+  let j = await single(S, [R]); // 玩家剪刀 vs Boss石头 → Boss 石头防御成功 → Boss架势+1
+  check('Boss石头防御玩家剪刀：Boss架势+1(0→1)', j.b === 1 && j.p === 0, `p=${j.p} b=${j.b}`);
 }
 {
-  let j = await single(R, [S]); // 玩家石头格挡Boss剪刀 → Boss架势+1
-  check('玩家石头格挡Boss剪刀：Boss架势+1(0→1)', j.b === 1, `b=${j.b}`);
+  let j = await single(R, [S]); // 玩家石头 vs Boss剪刀 → 玩家石头防御成功 → 玩家架势+1
+  check('玩家石头防御Boss剪刀：玩家架势+1(0→1)', j.p === 1 && j.b === 0, `p=${j.p} b=${j.b}`);
 }
 
 console.log('\n========== 五、Boss 升龙命中消耗 Boss 架势（对称） ==========');
@@ -120,20 +120,20 @@ console.log('\n========== 五、Boss 升龙命中消耗 Boss 架势（对称） 
 
 console.log('\n========== 六、多段连招的架势累积节奏（体感优化验证） ==========');
 {
-  // 5段剪刀 vs 5段石头：验证「一套连招最多 +1 格架势」，避免瞬间攒满
+  // 5段剪刀 vs 5段石头：Boss 石头连续防御成功，验证「一套连招最多 +1 格架势」，避免瞬间攒满
   await page.evaluate(() => {
     window.__play.startGame();
     window.__play.setCharges({ p: 0, b: 0 });
     window.__play.setBossMoves([0,0,0,0,0]);
     window.__play.forceSelect(1);
   });
-  let lastP = -1;
+  let lastB = -1;
   for (let i = 0; i < 5; i++) {
     await page.waitForTimeout(250);
     const c = await page.evaluate(() => window.__play.getCharges());
-    if (c.p !== lastP) { observe(`第${i}段后玩家架势`, `${lastP}→${c.p}`); lastP = c.p; }
+    if (c.b !== lastB) { observe(`第${i}段后Boss架势`, `${lastB}→${c.b}`); lastB = c.b; }
   }
-  check('多段连招：一套剪刀连招架势只+1(0→1)', lastP === 1, `lastP=${lastP}`);
+  check('多段连招：一套剪刀连招Boss架势只+1(0→1)', lastB === 1 && (await page.evaluate(() => window.__play.getCharges())).p === 0, `lastB=${lastB}`);
 }
 
 console.log('\n========== 七、10轮完整对局回归（AI 自动对战） ==========');
