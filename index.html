@@ -3,7 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>石头剪刀升龙拳 - Boss Rush 合作版</title>
+<title>石头剪刀升龙拳 - 拳台对决</title>
+<link rel="icon" href="data:,">
 <style>
   :root {
     --bg: #0a0a0f;
@@ -12,34 +13,115 @@
     --accent2: #ff6b6b;
     --gold: #ffc107;
     --green: #34d399;
+    /* 阶段氛围主题变量（由 JS 更新） */
+    --theme-accent: #4ec9ff;
+    --theme-edge-top: rgba(78,201,255,0.13);
+    --theme-edge-bottom: rgba(78,201,255,0.07);
+    --theme-vignette: rgba(16,26,46,0.45);
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body { background: var(--bg); font-family: 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif; overflow: hidden; height: 100vh; }
   #game-canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
   #ui-overlay { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; }
+  /* 全屏渐晕层 + 上下氛围光带 */
+  #vignette { position: fixed; inset: 0; pointer-events: none; z-index: 6; background: radial-gradient(ellipse at center, rgba(0,0,0,0) 45%, var(--theme-vignette) 100%); transition: background 0.6s ease; }
+  .edge-band { position: fixed; left: 0; right: 0; height: 70px; pointer-events: none; z-index: 6; }
+  .edge-band.top { top: 0; background: linear-gradient(to bottom, var(--theme-edge-top), rgba(0,0,0,0)); }
+  .edge-band.bottom { bottom: 0; background: linear-gradient(to top, var(--theme-edge-bottom), rgba(0,0,0,0)); }
+  /* 阶段横幅脉冲 */
+  #phase-indicator[data-pulse="on"] { animation: bannerPulse 0.8s infinite; }
+  @keyframes bannerPulse { 0%,100% { box-shadow: 0 0 0 0 var(--theme-accent); } 50% { box-shadow: 0 0 18px 3px var(--theme-accent); } }
 
   #top-hud { position: fixed; top: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: space-between; padding: 10px 18px; z-index: 10; pointer-events: none; }
   .title { font-size: 20px; font-weight: 800; letter-spacing: 2px; background: linear-gradient(135deg, var(--accent1), var(--gold), var(--accent2)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
   #phase-indicator { font-size: 15px; font-weight: 700; letter-spacing: 2px; padding: 6px 18px; border-radius: 6px; border: 1px solid #ffffff22; }
   .phase-waiting  { background: #12121a; color: #888; }
   .phase-select   { background: #1a3a5c; color: var(--accent1); border-color: #4ec9ff44; }
-  .phase-execute  { background: #2a1a3a; color: #c084fc; border-color: #c084fc44; }
-  .phase-boss     { background: #3a1a1a; color: var(--accent2); border-color: #ff6b6b44; animation: pulse 0.8s infinite; }
-  .phase-resolve  { background: #3a2a0a; color: var(--gold); border-color: #ffc10744; }
+  .phase-execute  { background: #3a2a0a; color: var(--gold); border-color: #ffc10744; animation: pulse 0.8s infinite; }
+  .phase-counter  { background: #3a2a0a; color: var(--gold); border-color: #ffd84d55; animation: pulse 0.8s infinite; }
+  .phase-preempt  { background: #0a1a3a; color: #7cc8ff; border-color: #4ec9ff88; animation: pulse 0.6s infinite; }
+  .phase-resolve  { background: #2a1a3a; color: #c084fc; border-color: #c084fc44; }
   .phase-roundend { background: #1a1a3a; color: #a78bfa; border-color: #a78bfa44; }
-  .phase-gameover { background: #2a2a0a; color: var(--gold); border-color: #ffc10744; }
+  .phase-gameover { background: #2a0a0a; color: var(--accent2); border-color: #ff6b6b44; }
   .phase-victory  { background: #0a2a1a; color: var(--green); border-color: #34d39944; }
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
   #round-indicator { font-size: 14px; color: #999; letter-spacing: 1px; }
 
-  #boss-hp-wrap { position: fixed; top: 52px; left: 50%; transform: translateX(-50%); width: min(560px, 70vw); z-index: 10; pointer-events: none; display: flex; align-items: center; gap: 10px; }
-  #boss-hp-label { color: var(--accent2); font-weight: 700; font-size: 13px; letter-spacing: 1px; }
+  /* ═══ 回合切换全屏公告（文字分割上下两半左右飞入 → 故障艺术停留 → 飞出消散）═══ */
+  #phase-banner { position: fixed; inset: 0; z-index: 20; pointer-events: none; overflow: hidden; opacity: 0; }
+  #phase-banner.show { opacity: 1; }
+  #phase-banner .b-half { position: absolute; left: 0; width: 100%; height: 50%; display: flex; align-items: center; justify-content: center; font-size: clamp(30px, 7vw, 64px); font-weight: 900; letter-spacing: 6px; color: #fff; white-space: pre; }
+  #phase-banner .b-top { top: 0; }
+  #phase-banner .b-bot { top: 50%; }
+  #phase-banner.show .b-top { animation: bannerInTop 2.6s cubic-bezier(.2,.8,.2,1) forwards; }
+  #phase-banner.show .b-bot { animation: bannerInBot 2.6s cubic-bezier(.2,.8,.2,1) forwards; }
+  /* 上/下半从左右飞入 → 拼合（故障抖动）→ 飞散 */
+  @keyframes bannerInTop {
+    0% { transform: translateX(-110%); opacity: 0; }
+    10% { transform: translateX(0); opacity: 1; }
+    30% { transform: translateX(3px); }
+    34% { transform: translateX(-2px); }
+    38% { transform: translateX(1px); }
+    78% { transform: translateX(0); opacity: 1; }
+    96% { transform: translateX(-115%); opacity: 0; }
+    100% { transform: translateX(-120%); opacity: 0; }
+  }
+  @keyframes bannerInBot {
+    0% { transform: translateX(110%); opacity: 0; }
+    10% { transform: translateX(0); opacity: 1; }
+    30% { transform: translateX(-3px); }
+    34% { transform: translateX(2px); }
+    38% { transform: translateX(-1px); }
+    78% { transform: translateX(0); opacity: 1; }
+    96% { transform: translateX(115%); opacity: 0; }
+    100% { transform: translateX(120%); opacity: 0; }
+  }
+  /* 霓虹辉光（主题色） */
+  #phase-banner .b-half { text-shadow: 0 0 6px currentColor, 0 0 18px currentColor, 0 0 42px currentColor; }
+  #phase-banner.blue  .b-half { color: #7cc8ff; }
+  #phase-banner.blue  { background: radial-gradient(circle at 50% 50%, rgba(78,150,255,0.16), transparent 65%); }
+  #phase-banner.red   .b-half { color: #ff6b6b; }
+  #phase-banner.red   { background: radial-gradient(circle at 50% 50%, rgba(255,80,80,0.18), transparent 65%); }
+  #phase-banner.white .b-half { color: #fff; }
+  #phase-banner.white { background: radial-gradient(circle at 50% 50%, rgba(255,255,255,0.2), transparent 60%); }
+  /* 扫描线 */
+  #phase-banner .b-scan { position: absolute; left: 0; right: 0; height: 3px; top: 40%; background: linear-gradient(90deg, transparent, currentColor, transparent); opacity: 0; }
+  #phase-banner.show .b-scan { opacity: 0.8; animation: bannerScan 2.6s ease-in-out forwards; }
+  #phase-banner.blue  .b-scan { color: #7cc8ff; }
+  #phase-banner.red   .b-scan { color: #ff6b6b; }
+  #phase-banner.white .b-scan { color: #fff; }
+  @keyframes bannerScan { 0%, 6% { top: 30%; opacity: 0; } 12% { opacity: 0.9; } 82% { opacity: 0.9; } 90% { top: 72%; opacity: 0; } 100% { top: 72%; opacity: 0; } }
+  /* 白色闪电粒子（抢占先机） */
+  #phase-banner.white .b-half { animation-duration: 1.8s; }
+  @keyframes bannerFlash { 0%,100% { filter: drop-shadow(0 0 0 rgba(255,255,255,0)); } 50% { filter: drop-shadow(0 0 24px rgba(255,255,255,0.9)); } }
+
+  #boss-hud { position: fixed; top: 44px; left: 50%; transform: translateX(-50%); width: min(560px, 70vw); z-index: 10; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .boss-cards { display: flex; gap: 6px; justify-content: center; }
+  .boss-card { width: 42px; height: 42px; border-radius: 9px; border: 1px solid rgba(255,255,255,0.16); background: rgba(80,20,20,0.45); display: inline-flex; align-items: center; justify-content: center; font-size: 20px; filter: grayscale(0.4); opacity: 0.75; transition: all 0.2s; }
+  .boss-card.current { border-color: #ff6b6b; box-shadow: 0 0 14px rgba(255,60,60,0.85); transform: scale(1.18); filter: none; opacity: 1; }
+  .boss-card.done { border-color: #ff6b6b88; filter: none; opacity: 1; }
+  .boss-card.empty { border-style: dashed; opacity: 0.3; }
+  #boss-hp-wrap { display: flex; align-items: center; gap: 10px; width: 100%; }
+  #boss-hp-label { color: var(--accent2); font-weight: 700; font-size: 13px; letter-spacing: 1px; white-space: nowrap; }
   #boss-hp-bar { flex: 1; height: 14px; border-radius: 7px; background: #1a1a22; border: 1px solid #ff6b6b33; overflow: hidden; }
   #boss-hp-fill { height: 100%; width: 100%; background: linear-gradient(90deg, #ff6b6b, #ffc107); transition: width 0.4s ease; }
   #boss-hp-text { color: #ffb3b3; font-size: 12px; font-weight: 600; min-width: 42px; text-align: right; }
+  /* 🔴 Boss 架势条 */
+  #boss-charge-hud { display: flex; align-items: center; gap: 8px; width: 100%; background: rgba(14,14,24,0.6); border: 1px solid #ff6b6b33; border-radius: 8px; padding: 4px 10px; }
+  #boss-charge-bar { flex: 1; height: 8px; border-radius: 5px; background: #1a1a22; border: 1px solid #ff6b6b22; overflow: hidden; }
+  #boss-charge-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #ff6b6b, #ffc107); transition: width 0.35s ease; box-shadow: 0 0 8px rgba(255,107,107,0.6); }
+  #boss-charge-text { color: #ffb3b3; font-size: 12px; font-weight: 700; min-width: 28px; text-align: right; }
+  /* ⚔️ 架势条（屏幕下方，蓄力进度） */
+  #charge-hud { position: fixed; bottom: 92px; left: 50%; transform: translateX(-50%); width: min(300px, 60vw); display: flex; align-items: center; gap: 8px; z-index: 10; pointer-events: none; background: rgba(14,14,24,0.85); border: 1px solid #ffd84d33; border-radius: 8px; padding: 5px 10px; }
+  #charge-bar { flex: 1; height: 9px; border-radius: 5px; background: #1a1a22; border: 1px solid #ffd84d22; overflow: hidden; }
+  #charge-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #4ec9ff, #ffd84d); transition: width 0.35s ease; box-shadow: 0 0 8px rgba(255,216,77,0.6); }
+  #charge-fill.pulse, #boss-charge-fill.pulse, .p-charge-fill.pulse { animation: chargePulse 0.5s ease; }
+  @keyframes chargePulse { 0% { filter: brightness(1); } 40% { filter: brightness(2.4); } 100% { filter: brightness(1); } }
+  .charge-label { color: #ffd84d; font-size: 12px; font-weight: 700; letter-spacing: 1px; white-space: nowrap; }
+  #charge-text { color: #ffd84d; font-size: 12px; font-weight: 700; min-width: 28px; text-align: right; }
 
-  #players-hud { position: fixed; bottom: 0; left: 0; right: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 4px 10px; z-index: 10; pointer-events: none; }
-  .p-hud { background: rgba(14,14,24,0.88); border: 1px solid #ffffff14; border-radius: 8px; padding: 4px 8px; min-height: 42px; transition: all 0.3s; }
+  #players-hud { position: fixed; bottom: 0; left: 0; right: 0; display: flex; justify-content: center; padding: 4px 10px; z-index: 10; pointer-events: none; }
+  .p-hud { background: rgba(14,14,24,0.9); border: 1px solid #ffffff14; border-radius: 10px; padding: 6px 10px; width: min(460px, 92vw); transition: all 0.3s; }
   .p-hud.inactive { opacity: 0.25; }
   .p-hud.dead { opacity: 0.4; filter: grayscale(0.9); }
   .p-hud.locked { border-color: var(--green); box-shadow: 0 0 12px rgba(52,211,153,0.3); }
@@ -49,21 +131,40 @@
   .p-status.attack { color: var(--accent2); font-weight: 700; }
   .p-status.guard  { color: var(--accent1); font-weight: 700; }
   .p-status.dodge  { color: var(--green); font-weight: 700; }
+  .p-charge-wrap { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+  .p-charge-bar { flex: 1; height: 7px; border-radius: 4px; background: #1a1a22; border: 1px solid #ffd84d33; overflow: hidden; }
+  .p-charge-fill { height: 100%; width: 0%; background: linear-gradient(90deg, #4ec9ff, #ffd84d); transition: width 0.35s ease; box-shadow: 0 0 8px rgba(255,216,77,0.6); }
+  .p-charge-text { font-size: 11px; color: #ffd84d; font-weight: 700; min-width: 24px; text-align: right; }
   .p-hp-wrap { display: flex; align-items: center; gap: 6px; margin-top: 4px; }
   .p-hp-bar { flex: 1; height: 9px; border-radius: 4px; background: #1a1a22; overflow: hidden; }
   .p-hp-fill { height: 100%; background: linear-gradient(90deg, #34d399, #4ec9ff); transition: width 0.3s; }
   .p-hp-text { font-size: 11px; color: #ccc; font-weight: 600; min-width: 24px; }
-  .p-combo { display: flex; gap: 4px; margin-top: 4px; font-size: 13px; min-height: 16px; }
-  .p-combo .slot { width: 18px; height: 18px; border-radius: 4px; border: 1px dashed #ffffff2a; display: inline-flex; align-items: center; justify-content: center; font-size: 11px; }
-  .p-combo .slot.filled { border-style: solid; background: #ffffff0d; }
+  /* 技能卡：显示在血条上方，更醒目 */
+  .p-movecards { display: flex; gap: 6px; margin-bottom: 6px; justify-content: center; }
+  .move-card { position: relative; width: 52px; height: 52px; border-radius: 10px; border: 2px dashed #ffffff2e; background: rgba(255,255,255,0.03); display: inline-flex; flex-direction: column; align-items: center; justify-content: center; transition: all 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+  .move-card.current { border-color: #ffd84d !important; box-shadow: 0 0 18px rgba(255,216,77,0.9) !important; transform: scale(1.12); }
+  .move-card .mc-icon { font-size: 26px; line-height: 1; filter: grayscale(0.6); opacity: 0.4; }
+  .move-card .mc-label { font-size: 9px; color: #aaa; margin-top: 2px; }
+  .move-card[data-state="filled"], .move-card[data-state="locked"] { border-style: solid; border-color: var(--theme-accent, #4ec9ff); background: rgba(255,255,255,0.08); box-shadow: 0 0 10px var(--theme-accent, #4ec9ff); }
+  .move-card[data-state="filled"] .mc-icon, .move-card[data-state="locked"] .mc-icon { filter: none; opacity: 1; }
+  .move-card[data-state="locked"] { border-color: #ffd84d; box-shadow: 0 0 14px rgba(255,216,77,0.6); }
+  .move-card[data-state="locked"] .mc-label { color: #ffd84d; }
+  .move-card[data-state="locked"]::after { content: '🔒'; position: absolute; top: -5px; right: -5px; font-size: 12px; }
+  @keyframes cardPop { 0% { transform: scale(0.6); opacity: 0; } 60% { transform: scale(1.08); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
+  .move-card.pop { animation: cardPop 0.25s cubic-bezier(0.34,1.56,0.64,1); }
+  @keyframes cardGlow { 0%,100% { box-shadow: 0 0 6px rgba(255,216,77,0.4); } 50% { box-shadow: 0 0 18px rgba(255,216,77,0.9); } }
+  .move-card.locking { animation: cardGlow 0.4s 2; }
 
-  #controls { position: fixed; bottom: 84px; right: 14px; display: flex; flex-direction: column; gap: 6px; z-index: 10; }
+  #controls { position: fixed; bottom: 132px; right: 14px; display: flex; flex-direction: column; gap: 6px; z-index: 10; }
+  #key-hint { position: fixed; bottom: 96px; right: 14px; font-size: 11px; color: #777; z-index: 10; pointer-events: none; text-align: right; line-height: 1.7; }
+  #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 7; }
   .btn { font-size: 13px; padding: 8px 16px; border-radius: 6px; border: 1px solid #555; background: #12121ae6; color: #ccc; cursor: pointer; letter-spacing: 1px; transition: all 0.2s; pointer-events: auto; }
   .btn:hover { border-color: var(--accent1); color: var(--accent1); }
   .btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-  #message-box { position: fixed; top: 46%; left: 50%; transform: translate(-50%,-50%); font-size: 26px; font-weight: 800; letter-spacing: 3px; color: #fff; text-align: center; z-index: 8; text-shadow: 0 0 24px rgba(0,0,0,0.9),0 2px 8px rgba(0,0,0,0.8); pointer-events: none; transition: opacity 0.3s; }
+  #message-box { position: fixed; top: auto; left: 16px; bottom: 132px; transform: none; font-size: 26px; font-weight: 800; letter-spacing: 3px; color: #fff; text-align: left; z-index: 8; text-shadow: 0 0 24px rgba(0,0,0,0.9),0 2px 8px rgba(0,0,0,0.8); pointer-events: none; transition: opacity 0.3s; white-space: pre-line; max-width: 44vw; line-height: 1.5; }
   #message-box.small { font-size: 15px; color: #ddd; letter-spacing: 1px; }
+  #message-box.center { left: 50%; bottom: 46%; top: auto; transform: translateX(-50%); text-align: center; max-width: 80vw; }
   #camera-video { position: fixed; left: 14px; top: 60px; width: 240px; height: 180px; object-fit: cover; border-radius: 10px; border: 1px solid #ffffff33; background: #000; transform: scaleX(-1); opacity: 0; pointer-events: none; transition: opacity 0.3s; z-index: 9; }
   #camera-video.on { opacity: 0.95; }
   #demo-hint { position: fixed; bottom: 84px; left: 14px; font-size: 11px; color: #888; z-index: 10; pointer-events: none; }
@@ -73,29 +174,236 @@
   #pose-debug-canvas { display: block; width: 220px; height: 150px; margin: 0 auto 6px; }
   #pose-debug-coords { font-size: 10px; line-height: 1.55; color: #c3ccd8; white-space: pre; }
 
+  /* 开发者面板 */
+  #dev-panel { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); width: min(420px, 92vw); max-height: 84vh; overflow-y: auto; background: rgba(10,12,22,0.96); border: 1px solid #4ec9ff55; border-radius: 14px; padding: 14px 16px; z-index: 200; display: none; box-shadow: 0 0 40px rgba(0,0,0,0.8); }
+  #dev-panel.open { display: block; }
+  #dev-panel .dev-head { font-size: 17px; font-weight: 800; color: #4ec9ff; letter-spacing: 2px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; }
+  #dev-panel .dev-key-hint { font-size: 10px; color: #889; font-weight: 400; }
+  #dev-panel .dev-section { margin-bottom: 12px; padding: 8px 10px; border: 1px solid #ffffff18; border-radius: 10px; background: rgba(255,255,255,0.03); }
+  #dev-panel .dev-sec-title { font-size: 12px; font-weight: 700; color: #ffd84d; margin-bottom: 8px; letter-spacing: 1px; }
+  #dev-panel label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; color: #cfd6e4; padding: 4px 0; }
+  #dev-panel input[type="number"] { width: 84px; background: #1a1c2c; border: 1px solid #ffffff22; color: #fff; border-radius: 6px; padding: 3px 6px; font-size: 12px; text-align: right; }
+  #dev-panel input[type="checkbox"] { width: 15px; height: 15px; accent-color: #4ec9ff; }
+  #dev-panel select { background: #1a1c2c; border: 1px solid #ffffff22; color: #fff; border-radius: 6px; padding: 3px 6px; font-size: 12px; }
+  #dev-panel .dev-actions { display: flex; gap: 8px; border: none; background: none; padding: 0; }
+  #dev-panel .dev-actions button { flex: 1; padding: 7px 0; border-radius: 8px; border: 1px solid #4ec9ff44; background: #12202e; color: #9fd8ff; font-size: 12px; cursor: pointer; font-weight: 700; }
+  #dev-panel .dev-actions button:hover { background: #1b3a55; }
+
+  /* 新手引导层 */
+  #tutorial-overlay { position: fixed; inset: 0; z-index: 300; display: flex; align-items: center; justify-content: center; background: radial-gradient(ellipse at center, #0d1428 0%, #05060c 78%); }
+  #tutorial-overlay.hidden { display: none; }
+  .tut-card { width: min(880px, 94vw); max-height: 92vh; overflow-y: auto; background: rgba(12,16,32,0.82); border: 1px solid rgba(78,201,255,0.25); border-radius: 22px; padding: 28px 34px; backdrop-filter: blur(14px); box-shadow: 0 0 60px rgba(78,201,255,0.12), inset 0 0 40px rgba(255,255,255,0.02); text-align: center; }
+  .tut-card h1 { font-size: 38px; font-weight: 800; letter-spacing: 4px; background: linear-gradient(135deg, #4ec9ff, #ffd84d, #ff6b6b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-bottom: 6px; }
+  .tut-sub { font-size: 15px; color: #9fb0d0; letter-spacing: 2px; margin-bottom: 20px; }
+  .tut-gestures { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 18px; }
+  .tut-gesture { width: 168px; padding: 12px 10px; border-radius: 14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.10); transition: all 0.25s; }
+  .tut-gesture:hover { border-color: rgba(78,201,255,0.5); transform: translateY(-4px); box-shadow: 0 8px 24px rgba(78,201,255,0.15); }
+  .tut-gesture img { width: 100%; height: 128px; object-fit: contain; border-radius: 10px; background: #0a0d1c; margin-bottom: 8px; display: block; }
+  .tut-gesture .tg-name { font-size: 16px; font-weight: 800; margin-bottom: 3px; }
+  .tut-gesture .tg-desc { font-size: 11px; color: #ffffff; line-height: 1.5; }
+  .tut-rules { display: inline-flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 12px 18px; margin-bottom: 22px; }
+  .tut-rules .tr-item { font-size: 14px; font-weight: 700; padding: 4px 12px; border-radius: 8px; background: rgba(255,255,255,0.06); color: #ffffff; }
+  .tut-rules .tr-arrow { color: #ffd84d; font-size: 18px; font-weight: 800; }
+  .tut-rules .tr-beat { color: #69f0ae; font-size: 11px; font-weight: 700; margin-top: 2px; }
+  #tut-start { font-size: 18px; font-weight: 800; letter-spacing: 3px; padding: 13px 50px; border-radius: 14px; border: none; cursor: pointer; color: #04101c; background: linear-gradient(135deg, #4ec9ff, #69f0ae); box-shadow: 0 0 30px rgba(78,201,255,0.5); transition: all 0.25s; }
+  #tut-start:hover { transform: scale(1.06); box-shadow: 0 0 44px rgba(78,201,255,0.8); }
+  .tut-gesture .tg-emoji { width: 100%; height: 128px; display: flex; align-items: center; justify-content: center; font-size: 74px; border-radius: 10px; background: linear-gradient(180deg, #0d1226, #0a0d1c); margin-bottom: 8px; }
+  .tut-gesture .tg-name { font-size: 16px; font-weight: 800; margin-bottom: 3px; }
+  .tut-gesture .tg-desc { font-size: 11px; color: #ffffff; line-height: 1.5; }
+
+  /* ═══ 校准流程（站立展开双臂自动标定肩宽） ═══ */
+  #calib-overlay {
+    position: fixed; inset: 0; background: rgba(5,8,16,.92);
+    display: flex; align-items: center; justify-content: center; z-index: 60;
+  }
+  #calib-overlay.hidden { display: none; }
+  .calib-card {
+    width: min(420px, 92vw); background: rgba(15,22,40,.95); border: 1px solid #33405f;
+    border-radius: 18px; padding: 28px 26px; text-align: center; color: #e8eefc;
+    box-shadow: 0 0 60px rgba(78,201,255,.15);
+  }
+  .calib-card h2 { margin: 0 0 6px; font-size: 22px; letter-spacing: 1px; }
+  .calib-card .calib-sub { color: #9aa7c0; font-size: 13px; margin-bottom: 18px; line-height: 1.6; }
+  .calib-stage {
+    display: none; flex-direction: column; align-items: center; gap: 14px; margin-bottom: 16px;
+  }
+  .calib-stage.active { display: flex; }
+  .calib-avatar {
+    width: 132px; height: 170px; border: 2px dashed #3d4f77; border-radius: 14px;
+    display: flex; flex-direction: column; align-items: center; justify-content: flex-start;
+    padding-top: 18px; gap: 10px; background: rgba(255,255,255,.03);
+  }
+  .calib-avatar .ca-head { width: 34px; height: 34px; border-radius: 50%; background: #4ec9ff; }
+  .calib-avatar .ca-arm { width: 84px; height: 10px; border-radius: 6px; background: #8a9cc8; }
+  .calib-avatar .ca-arm.left { transform: rotate(-8deg); }
+  .calib-avatar .ca-arm.right { transform: rotate(8deg); }
+  .calib-avatar .ca-torso { width: 48px; height: 66px; border-radius: 12px; background: #33405f; }
+  .calib-state { font-size: 14px; color: #ffd77a; min-height: 20px; font-weight: 700; }
+  .calib-done { color: #57e3a8; }
+  .calib-actions { display: flex; gap: 10px; justify-content: center; margin-top: 6px; }
+  .btn-primary {
+    background: linear-gradient(135deg,#2ea8ff,#1b6cff); border: none; color: #fff;
+    padding: 11px 22px; border-radius: 12px; font-size: 15px; font-weight: 800;
+    cursor: pointer; letter-spacing: 1px; transition: transform .12s, filter .12s;
+  }
+  .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.12); }
+  .btn-ghost {
+    background: transparent; border: 1px solid #33405f; color: #9aa7c0;
+    padding: 11px 18px; border-radius: 12px; font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: border-color .12s, color .12s;
+  }
+  .btn-ghost:hover { border-color: #5b6b96; color: #e8eefc; }
+  .calib-sens { margin-top: 18px; text-align: left; }
+  .calib-sens .cs-title { font-size: 12px; color: #9aa7c0; margin-bottom: 6px; display: flex; justify-content: space-between; }
+  .calib-sens input[type=range] { width: 100%; accent-color: #4ec9ff; }
+
+  /* ═══ 连击指示器 + 难度标签 ═══ */
+  #combo-indicator {
+    position: fixed; left: 50%; top: 92px; transform: translateX(-50%);
+    font-size: 30px; font-weight: 900; letter-spacing: 2px; color: #ffb03a;
+    text-shadow: 0 0 18px rgba(255,176,58,.8), 0 2px 4px rgba(0,0,0,.5);
+    opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 12;
+  }
+  #combo-indicator.show { opacity: 1; transform: translateX(-50%) scale(1.06); }
+  /* ═══ 选招入连招确认（屏幕居中，参考反击 UI 位置） ═══ */
+  #combo-confirm {
+    position: fixed; left: 50%; top: 50%; transform: translate(-50%, -58%);
+    font-size: 34px; font-weight: 900; letter-spacing: 3px; color: #ffffff;
+    text-shadow: 0 0 20px rgba(78,150,255,.9), 0 2px 6px rgba(0,0,0,.6);
+    opacity: 0; pointer-events: none; transition: opacity .15s, transform .15s; z-index: 12;
+    background: rgba(10,16,30,.35); border: 1px solid rgba(78,150,255,.45);
+    padding: 10px 26px; border-radius: 18px; white-space: nowrap;
+  }
+  #combo-confirm.show { opacity: 1; transform: translate(-50%, -58%) scale(1.06); }
+  #difficulty-label {
+    position: fixed; right: 16px; top: 10px; font-size: 12px; color: #9aa7c0;
+    background: rgba(10,16,30,.6); border: 1px solid #33405f; border-radius: 20px;
+    padding: 4px 12px; letter-spacing: 1px; z-index: 12;
+  }
+  #difficulty-label b { color: #ffd77a; }
+
+  /* ═══ 出拳提示（充能阶段） ═══ */
+  #charge-tip {
+    position: fixed; left: 50%; bottom: 108px; transform: translateX(-50%);
+    font-size: 14px; font-weight: 800; color: #ffd77a; text-align: center;
+    background: rgba(10,16,30,.72); border: 1px solid rgba(255,215,122,.35);
+    padding: 8px 16px; border-radius: 24px; letter-spacing: 1px;
+    opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 12;
+  }
+  #charge-tip.show { opacity: 1; }
+
+  /* ═══ 校准阶段摄像头边框提示 ═══ */
+  .cam-frame-hint {
+    position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%);
+    font-size: 12px; color: #ffd77a; background: rgba(10,16,30,.7);
+    padding: 4px 12px; border-radius: 16px; white-space: nowrap; pointer-events: none;
+  }
+
 </style>
 </head>
 <body>
 <canvas id="game-canvas"></canvas>
 <canvas id="ui-overlay"></canvas>
+<div id="flash"></div>
+<div class="edge-band top"></div>
+<div class="edge-band bottom"></div>
+
+<div id="tutorial-overlay">
+  <div class="tut-card">
+    <h1>🪨✂️🐉 石头剪刀升龙拳</h1>
+    <div class="tut-sub">像拳击手一样对决：每回合连摆 5 招组成连招 → 摆满自动确认 → 连招逐招判定</div>
+    <div class="tut-gestures">
+      <div class="tut-gesture"><span class="tg-emoji">🪨</span><div class="tg-name" style="color:#6fd3ff;">石头</div><div class="tg-desc">双臂交叉护胸<br>克剪刀 · 被升龙破</div></div>
+      <div class="tut-gesture"><span class="tg-emoji">✂️</span><div class="tg-name" style="color:#7fffb3;">剪刀</div><div class="tg-desc">双拳前刺<br>克不出招 · 被石头克</div></div>
+      <div class="tut-gesture"><span class="tg-emoji">🐉</span><div class="tg-name" style="color:#ffd84d;">升龙拳</div><div class="tg-desc">双拳上勾<br>克石头 · 被闪避躲</div></div>
+      <div class="tut-gesture"><span class="tg-emoji">💨</span><div class="tg-name" style="color:#c4b5fd;">闪避·躲</div><div class="tg-desc">左右闪身（偏离画面中线）<br>躲升龙反击 · 被剪刀克</div></div>
+    </div>
+    <div class="tut-rules">
+      <span class="tr-item" style="color:#6fd3ff;">🪨 石头</span><span class="tr-arrow">克</span>
+      <span class="tr-item" style="color:#7fffb3;">✂️ 剪刀</span><span class="tr-arrow">克</span>
+      <span class="tr-item" style="color:#ffd84d;">🐉 升龙</span><span class="tr-arrow">克</span>
+      <span class="tr-item" style="color:#6fd3ff;">🪨 石头</span>
+      <span class="tr-item" style="color:#ffd84d;">🐉 升龙</span><span class="tr-arrow">克</span>
+      <span class="tr-item" style="color:#7fffb3;">✂️ 剪刀</span>
+    </div>
+    <div class="tut-rules" style="border:none;background:none;padding:0 0 6px;margin-bottom:14px;">
+      <span class="tr-item">🕐 每回合连摆 5 招组成连招（🪨✂️🐉💨 可重复），每招保持动作 1 秒确认（屏幕有进度提示）</span><br>
+      <span class="tr-item">⚡ 连招含剪刀/升龙时出现充能圆环，接近满格时放下手臂 = 完美连招（每个攻击段 +1 伤害）</span><br>
+      <span class="tr-item">💨 闪避可躲一切攻击（✂️剪刀/🐉升龙）：有架势 → 消耗 1 架势，100% 躲开；无架势 → 30% 概率躲开；闪避成功不会累积架势，失败则受伤害且下回合攻击 -1</span><br>
+      <span class="tr-item">🐉 闪避躲开 Boss 升龙触发反击窗口：手臂挥过肩高出拳 = 反击成功（Boss -1 血），圆环填满瞬间 = 完美反击（Boss -2 血）</span><br>
+      <span class="tr-item">✨ 剪刀 vs 剪刀对拼触发「抢占先机」慢动作：蓝金圆环填满前出拳 = 抢占 2 点伤害</span><br>
+      <span class="tr-item">🐉 升龙被 Boss 闪避躲开（挥空）触发「Boss 防守反击」：Boss 冲向玩家慢动作，看准时机做闪避 💨 或石头 🪨 防御化解，否则被反击命中 -2 血</span><br>
+      <span class="tr-item">⚔️ 剪刀 ✂️ 打到石头 🪨（被防御）可累积架势条（上限 10 格，攻击招每格 +1 伤害）；闪避 💨 消耗架势换保命、不累积；闪避成功 → 攻击 +1 / 失败 → 攻击 -1；Boss 同样拥有架势与闪避</span><br>
+      <span class="tr-item">🎥 全程体感操作，键盘仅作备用（1石头 2剪刀 3升龙 4闪避，连按凑满 5 招）</span>
+    </div>
+    <button id="tut-start">▶ 开始对决</button>
+    <button class="btn-ghost" id="tut-calib" style="margin-top:10px;width:100%;">🎯 先做身体校准（推荐）</button>
+  </div>
+</div>
+
+<div id="calib-overlay" class="hidden">
+  <div class="calib-card">
+    <h2>🎯 身体校准</h2>
+    <div class="calib-sub">站到摄像头前让上半身完全入镜，然后张开双臂呈 T 字，系统会读取你的肩宽来优化手势判定。<br>（无摄像头可跳过，使用默认值）</div>
+    <div class="calib-stage active" id="calib-stage-1">
+      <div class="calib-avatar"><div class="ca-head"></div><div class="ca-arm left"></div><div class="ca-arm right"></div><div class="ca-torso"></div></div>
+      <div class="calib-state" id="calib-state-1">张开双臂，保持 2 秒…</div>
+      <div class="calib-actions">
+        <button class="btn-ghost" id="calib-skip">跳过校准</button>
+      </div>
+    </div>
+    <div class="calib-stage" id="calib-stage-2">
+      <div class="calib-state calib-done" id="calib-state-2">✅ 校准完成！</div>
+      <div class="calib-sens">
+        <div class="cs-title"><span>手势灵敏度</span><span id="sens-val">中</span></div>
+        <input type="range" id="calib-sens" min="0" max="2" step="1" value="1">
+      </div>
+      <div class="calib-actions">
+        <button class="btn-primary" id="calib-done">进入战斗</button>
+      </div>
+    </div>
+  </div>
+</div>
 
 <div id="top-hud">
-  <span class="title">🪨✂️ 石头剪刀升龙拳 · Boss Rush</span>
+  <span class="title">🪨✂️🐉 石头剪刀升龙拳 · 拳台对决</span>
   <span id="phase-indicator" class="phase-waiting">⏳ 等待开始</span>
   <span id="round-indicator">回合 0</span>
 </div>
 
-<div id="boss-hp-wrap">
-  <span id="boss-hp-label">👹 BOSS</span>
-  <div id="boss-hp-bar"><div id="boss-hp-fill"></div></div>
-  <span id="boss-hp-text">20/20</span>
+<div id="phase-banner">
+  <span class="b-half b-top"></span>
+  <span class="b-half b-bot"></span>
+  <span class="b-scan"></span>
+</div>
+<div id="difficulty-label">AI 难度 <b id="difficulty-text">普通</b></div>
+<div id="combo-indicator"></div>
+<div id="combo-confirm"></div>
+<div id="charge-tip">⚡ 圆环满格时放下手臂！</div>
+
+<div id="boss-hud">
+  <div class="boss-cards" id="boss-cards"></div>
+  <div id="boss-hp-wrap">
+    <span id="boss-hp-label">🔴 红方拳手</span>
+    <div id="boss-hp-bar"><div id="boss-hp-fill"></div></div>
+    <span id="boss-hp-text">20/20</span>
+  </div>
+  <!-- 🔴 Boss 架势条（与玩家对称：Boss 闪避消耗 / Boss 石头防御成功累积） -->
+  <div id="boss-charge-hud">
+    <span class="charge-label">🔴 架势</span>
+    <div id="boss-charge-bar"><div id="boss-charge-fill"></div></div>
+    <span id="boss-charge-text">0/3</span>
+  </div>
+</div>
+
+<div id="charge-hud">
+  <span class="charge-label">⚔️ 架势</span>
+  <div id="charge-bar"><div id="charge-fill"></div></div>
+  <span id="charge-text">0/3</span>
 </div>
 
 <div id="players-hud">
-  <div class="p-hud inactive" id="hud-0"><div class="p-hud-row1"><span class="p-name" style="color:#4ec9ff;">P1</span><span class="p-status">未就位</span></div><div class="p-hp-wrap"><div class="p-hp-bar"><div class="p-hp-fill" style="width:100%"></div></div><span class="p-hp-text">10</span></div><div class="p-combo"><span class="slot"></span><span class="slot"></span></div></div>
-  <div class="p-hud inactive" id="hud-1"><div class="p-hud-row1"><span class="p-name" style="color:#69f0ae;">P2</span><span class="p-status">未就位</span></div><div class="p-hp-wrap"><div class="p-hp-bar"><div class="p-hp-fill" style="width:100%"></div></div><span class="p-hp-text">10</span></div><div class="p-combo"><span class="slot"></span><span class="slot"></span></div></div>
-  <div class="p-hud inactive" id="hud-2"><div class="p-hud-row1"><span class="p-name" style="color:#ffc107;">P3</span><span class="p-status">未就位</span></div><div class="p-hp-wrap"><div class="p-hp-bar"><div class="p-hp-fill" style="width:100%"></div></div><span class="p-hp-text">10</span></div><div class="p-combo"><span class="slot"></span><span class="slot"></span></div></div>
-  <div class="p-hud inactive" id="hud-3"><div class="p-hud-row1"><span class="p-name" style="color:#8b5cf6;">P4</span><span class="p-status">未就位</span></div><div class="p-hp-wrap"><div class="p-hp-bar"><div class="p-hp-fill" style="width:100%"></div></div><span class="p-hp-text">10</span></div><div class="p-combo"><span class="slot"></span><span class="slot"></span></div></div>
+  <div class="p-hud inactive" id="hud-0"><div class="p-movecards"></div><div class="p-hud-row1"><span class="p-name" style="color:#4ec9ff;">⚪ 你</span><span class="p-status">未就位</span></div><div class="p-charge-wrap"><span class="charge-label">⚔️ 架势</span><div class="p-charge-bar"><div class="p-charge-fill" id="player-charge-fill"></div></div><span class="p-charge-text" id="player-charge-text">0/3</span></div><div class="p-hp-wrap"><div class="p-hp-bar"><div class="p-hp-fill" style="width:100%"></div></div><span class="p-hp-text">10</span></div></div>
 </div>
 
 <div id="controls">
@@ -103,8 +411,9 @@
   <button class="btn" id="start-btn">▶ 开始游戏</button>
 </div>
 
-<div id="message-box">点击「开始游戏」，或开启摄像头后自动开始</div>
+<div id="message-box">像拳击手一样对决：连摆 5 招 → 倒计时确认 → 连招逐招判定</div>
 <div id="demo-hint">演示模式：加 ?demo 参数自动模拟</div>
+<div id="key-hint">键盘备用：1=石头 2=剪刀 3=升龙 4=不出招（连按凑满 5 招连招）</div>
 
 <div id="pose-debug">
   <div id="pose-debug-title">🦴 骨骼捕捉</div>
@@ -115,6 +424,48 @@
 
 <video id="camera-video" autoplay playsinline muted></video>
 
+<div id="dev-panel">
+  <div class="dev-head">🛠 开发者面板 <span class="dev-key-hint">按 Q 开关</span></div>
+  <div class="dev-section">
+    <div class="dev-sec-title">🎮 游戏数值建构</div>
+    <label>玩家血量 <input type="number" id="dev-maxhp" value="10" min="1" max="99"></label>
+    <label>Boss 血量 <input type="number" id="dev-bosshp" value="20" min="1" max="999"></label>
+    <label>充能时间(ms) <input type="number" id="dev-chargems" value="2000" min="800" step="200"></label>
+    <label>剪刀伤害 <input type="number" id="dev-dmg-scissors" value="1" min="0" max="20"></label>
+    <label>升龙伤害 <input type="number" id="dev-dmg-dragon" value="2" min="0" max="20"></label>
+    <label>反击伤害 <input type="number" id="dev-dmg-counter" value="1" min="0" max="20"></label>
+    <label>抢占伤害 <input type="number" id="dev-dmg-preempt" value="2" min="0" max="20"></label>
+    <label>抢占窗口(ms) <input type="number" id="dev-preemptms" value="2000" min="800" step="200"></label>
+    <label>架势条上限 <input type="number" id="dev-chargemax" value="10" min="0" max="100"></label>
+    <label>AI 难度
+      <select id="dev-ai">
+        <option value="0">简单（纯随机）</option>
+        <option value="1" selected>普通（读心 3 招）</option>
+        <option value="2">困难（读心 8 招 + 反制暴击）</option>
+      </select>
+    </label>
+  </div>
+  <div class="dev-section">
+    <div class="dev-sec-title">💡 作弊模式</div>
+    <label><input type="checkbox" id="dev-god"> 🛡️ 玩家无敌（不受伤害）</label>
+    <label><input type="checkbox" id="dev-oneshot"> 💥 一击必杀（秒 Boss）</label>
+  </div>
+  <div class="dev-section">
+    <div class="dev-sec-title">🧭 调试</div>
+    <label><input type="checkbox" id="dev-pose-debug"> 🦴 显示骨骼调试窗</label>
+    <label>镜像方向
+      <select id="dev-mirror">
+        <option value="-1">玩家左 → 白盒左</option>
+        <option value="1">玩家左 → 白盒右</option>
+      </select>
+    </label>
+  </div>
+  <div class="dev-section dev-actions">
+    <button id="dev-skip">⏭ 跳过选招</button>
+    <button id="dev-reset">🔄 重置游戏</button>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/pose@0.5.1675469404/pose.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils@0.3.1675466862/camera_utils.js" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils@0.3.1675466124/drawing_utils.js" crossorigin="anonymous"></script>
@@ -124,39 +475,312 @@ import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.m
 // ═══════════════════════════════════════════════════════════
 //  常量与数据表
 // ═══════════════════════════════════════════════════════════
-const MAX_HP_PLAYER = 10;
-const MAX_HP_BOSS = 20;
+let MAX_HP_PLAYER = 10;
+let MAX_HP_BOSS = 20;
 const MAX_PLAYERS = 4;
-const COMBO_LEN = 2;
-const SELECT_MS = 5000;
-const EXECUTE_MS = 2400;
-const BOSS_WARN_MS = 5000;
-const ROUND_END_MS = 2200;
-const GESTURE_HOLD_MS = 800;
-const RECONFIRM_MS = 1000;
-const LANE_STEP = 4.0; // = 轨道间距（加宽后），倾斜一次正好切到下一条轨道中心
-const WORLD_SHIFT_X = 1.5; // 轨道组中心在世界 +X（=屏幕左侧），Boss 留在世界中心（画面中央消失点）
+const COMBO_LEN = 5;             // 连招长度：每回合连摆 5 招
+let SELECT_MS = 20000;           // 选招倒计时：给足时间让玩家逐招摆出 5 招（连招含攻击招 = SELECT_MS+1000）
+let CHARGE_MS = 2000;            // 连招充能时长（完美时机窗口）
+const PERFECT_FRAC = 0.55;       // 充能 ≥55% 时出拳视为完美（+1 伤害）
+let SLOT_MS = 1200;              // 判定动画播放时长
+let ROUND_END_MS = 2200;         // 回合结算停留时长
+let COUNTER_MS = 3000;           // Boss 升龙挥空后的反击窗口时长（圆环扩散填充）
+let COUNTER_PERFECT_MS = 50;     // 完美反击容错（圆环填满瞬间 ±50ms）
+const GESTURE_HOLD_MS = 500;     // 手势保持确认时长（反击挥拳 / 充能出拳）
+let SELECT_HOLD_MS = 1000;       // 选招阶段：每次选招需保持对应动作 1.0 秒才确认
+// ⚡ 慢动作抢占先机（剪刀 vs 剪刀）
+let PREEMPT_MS = 2000;           // 抢占窗口时长（圆环从外向内蓝→金填充）
+let PREEMPT_SLOW = 0.5;          // 慢动作时间缩放（0.5 倍速，抢占/反击/防守判定通用）
+let PREEMPT_DMG = 2;             // 抢占成功伤害
+// 🛡️ Boss 防守反击（玩家升龙被 Boss 闪避躲开后）窗口
+let RETALIATE_MS = 2500;         // Boss 防守反击窗口时长（玩家做闪避/石头防御化解）
+let RETALIATE_DMG = 2;           // Boss 反击命中玩家伤害（与升龙伤害相当）
+let RETALIATE_HOLD_MS = 350;     // 化解动作需保持的时长
+let SLOW_VISUAL_MS = 1500;       // 慢动作视觉时长（0.5x 下约 1.5 秒，折合真实 750ms）
+let BOOST_MS = 500;              // 慢动作结束后加速回放时长（真实 0.5 秒）
+let BOOST_SPEED = 1.2;           // 加速回放倍速（1.2x，形成反差感）
+const RECONFIRM_MS = 700;        // 重复出招防抖
 
-const MOVE = { STONE:0, SCISSORS:1, DRAGON:2, PASS:3 };
+const MOVE = { STONE:0, SCISSORS:1, DRAGON:2, DODGE:3 };
 const MOVES = {
-  [MOVE.STONE]:    { key:'STONE', name:'石头·守', icon:'🪨', type:'guard',  damage:0, color:'#4ec9ff' },
+  [MOVE.STONE]:    { key:'STONE', name:'石头·防', icon:'🪨', type:'guard',  damage:0, color:'#4ec9ff' },
   [MOVE.SCISSORS]: { key:'SCISSORS', name:'剪刀·刺', icon:'✂️', type:'attack', damage:1, color:'#69f0ae' },
   [MOVE.DRAGON]:   { key:'DRAGON', name:'升龙拳', icon:'🐉', type:'attack', damage:2, color:'#ffc107' },
-  [MOVE.PASS]:     { key:'PASS', name:'不出招', icon:'🚫', type:'pass', damage:0, color:'#8b5cf6' },
+  [MOVE.DODGE]:    { key:'DODGE', name:'闪避·躲', icon:'💨', type:'dodge', damage:0, color:'#8b5cf6' },
 };
-const MOVE_NAMES = [MOVE.STONE,MOVE.SCISSORS,MOVE.DRAGON,MOVE.PASS].map(id=>MOVES[id].name);
-const MOVE_ICONS = [MOVE.STONE,MOVE.SCISSORS,MOVE.DRAGON,MOVE.PASS].map(id=>MOVES[id].icon);
+const MOVE_NAMES = [MOVE.STONE,MOVE.SCISSORS,MOVE.DRAGON,MOVE.DODGE].map(id=>MOVES[id].name);
+const MOVE_ICONS = [MOVE.STONE,MOVE.SCISSORS,MOVE.DRAGON,MOVE.DODGE].map(id=>MOVES[id].icon);
+const MOVE_KEYS = { [MOVE.STONE]:'rock', [MOVE.SCISSORS]:'scissors', [MOVE.DRAGON]:'dragon', [MOVE.DODGE]:'rock' };
 
-const BOSS_ATTACK = { MELEE:0, RANGED:1 };
-const BOSS_MELEE_DMG = 3;
-const BOSS_RANGED_DMG = 2;
-const BOSS_RANGED_GUARDED = 1;
-const COUNTER_DMG = 1;
-const MELEE_RADIUS = 3.5;   // 近战预警矩形视觉半宽（5.0×1.4/2），攻击判定与画面完全一致
-const RANGED_RADIUS = 2.8;  // 远程预警红圈视觉外半径（1.0 × 2.8），攻击判定局限在圈内
-const DEFEND_MIN_FRAMES = 4; // 防御姿势需在预警期间累计至少 4 帧才判定有效，防抖动误判
+// 伤害数值（开发者面板可调）
+let DMG_SCISSORS = 1;
+let DMG_DRAGON = 2;
+let DMG_COUNTER = 1;
 
-const PHASE = { WAITING:0, SELECT:1, EXECUTE:2, BOSS_ATTACK:3, RESOLVE:4, ROUND_END:5, GAMEOVER:6, VICTORY:7 };
+// 判定结果类型
+const JUDGE_RESULT = { PLAYER_WIN:0, BOSS_WIN:1, BOTH_HIT:2, NEUTRAL:3, PLAYER_STUN:4, BOSS_STUN:5 };
+
+// 判定表：JUDGE_TABLE[玩家招][Boss招] → { result, dmgP(玩家受), dmgB(Boss受), label }
+// 克制链：石头→剪刀→升龙→石头；闪避作为主动躲避，闪避 vs 剪刀/升龙 走特殊判定
+let JUDGE_TABLE = null;
+function buildJudgeTable() {
+  return {
+    [MOVE.STONE]: {
+      [MOVE.STONE]:    { result:JUDGE_RESULT.NEUTRAL,    dmgP:0,            dmgB:0,            label:'格挡抵消' },
+      [MOVE.SCISSORS]: { result:JUDGE_RESULT.PLAYER_WIN, dmgP:0,            dmgB:DMG_COUNTER,   label:'防守反击!' },
+      [MOVE.DRAGON]:   { result:JUDGE_RESULT.BOSS_WIN,   dmgP:DMG_DRAGON,   dmgB:0,            label:'被破防!' },
+      [MOVE.DODGE]:    { result:JUDGE_RESULT.NEUTRAL,    dmgP:0,            dmgB:0,            label:'对峙' },
+    },
+    [MOVE.SCISSORS]: {
+      [MOVE.STONE]:    { result:JUDGE_RESULT.PLAYER_STUN, dmgP:DMG_COUNTER,   dmgB:0,             label:'被格挡' },
+      [MOVE.SCISSORS]: { result:JUDGE_RESULT.BOTH_HIT,    dmgP:DMG_SCISSORS,  dmgB:DMG_SCISSORS,  label:'对拼!' },
+      [MOVE.DRAGON]:   { result:JUDGE_RESULT.BOSS_WIN,    dmgP:DMG_DRAGON,    dmgB:0,             label:'被升龙击中!' },
+      [MOVE.DODGE]:    { result:JUDGE_RESULT.NEUTRAL,     dmgP:0,             dmgB:0,             label:'闪避周旋' },
+    },
+    [MOVE.DRAGON]: {
+      [MOVE.STONE]:    { result:JUDGE_RESULT.PLAYER_WIN, dmgP:0,            dmgB:DMG_DRAGON,   label:'破防!' },
+      [MOVE.SCISSORS]: { result:JUDGE_RESULT.PLAYER_WIN, dmgP:0,            dmgB:DMG_DRAGON,   label:'升龙击中!' },
+      [MOVE.DRAGON]:   { result:JUDGE_RESULT.NEUTRAL,    dmgP:0,            dmgB:0,            label:'双龙相撞' },
+      [MOVE.DODGE]:    { result:JUDGE_RESULT.NEUTRAL,    dmgP:0,            dmgB:0,            label:'升龙扑空' },
+    },
+    [MOVE.DODGE]: {
+      [MOVE.STONE]:    { result:JUDGE_RESULT.NEUTRAL,   dmgP:0,            dmgB:0,            label:'对峙' },
+      [MOVE.SCISSORS]: { result:JUDGE_RESULT.NEUTRAL,   dmgP:0,            dmgB:0,            label:'闪避判定' },
+      [MOVE.DRAGON]:   { result:JUDGE_RESULT.NEUTRAL,   dmgP:0,            dmgB:0,            label:'闪避判定' },
+      [MOVE.DODGE]:    { result:JUDGE_RESULT.NEUTRAL,   dmgP:0,            dmgB:0,            label:'静观其变' },
+    },
+  };
+}
+JUDGE_TABLE = buildJudgeTable();
+
+// AI 克制表：counter[X] = 克制 X 的招（闪避用于躲开升龙反击）
+const AI_COUNTER = { [MOVE.STONE]:MOVE.DRAGON, [MOVE.SCISSORS]:MOVE.STONE, [MOVE.DRAGON]:MOVE.DODGE, [MOVE.DODGE]:MOVE.SCISSORS };
+// DEMO 自动选招：针对 Boss 出招选最优克制（展示完整判定特效）
+function pickCounter(bMove) { return AI_COUNTER[bMove]; }
+// Boss 出招采用固定套路（可预测）：5 招按模式循环，轮次变化偏移量
+// 各套路的长度不限，不足 5 招时自动补齐
+const BOSS_PATTERNS = [
+  [ MOVE.DRAGON, MOVE.DRAGON, MOVE.DRAGON, MOVE.SCISSORS, MOVE.STONE ],   // 起手连升龙
+  [ MOVE.SCISSORS, MOVE.STONE, MOVE.DRAGON, MOVE.DODGE, MOVE.SCISSORS ],   // 攻防交替
+  [ MOVE.STONE, MOVE.STONE, MOVE.SCISSORS, MOVE.DRAGON, MOVE.DODGE ],      // 双石头开道
+  [ MOVE.DODGE, MOVE.DRAGON, MOVE.STONE, MOVE.SCISSORS, MOVE.DRAGON ],     // 藏升龙
+];
+function bossChooseMoves(round) {
+  const base = BOSS_PATTERNS[round % BOSS_PATTERNS.length];
+  const out = [];
+  for (let i=0;i<COMBO_LEN;i++) out.push(base[i % base.length]);
+  return out;
+}
+
+// 作弊模式开关（开发者面板）
+const CHEAT = { god:false, oneShot:false };
+
+// AI 难度：0 简单 / 1 普通 / 2 困难；灵敏度 0低/1中/2高；校准肩宽（归一化）
+let AI_LEVEL = 1;
+let SENSITIVITY = 1;
+let CALIB_SHOULDER = 0.14;
+const SENS_MAP = [0.85, 1.0, 1.15];
+// 闪避水平侧移阈值（以肩宽 sw 为单位）：身体中心偏离画面中线(0.5)超过 sw*DODGE_X_THRESHOLD 即判定闪避
+// 数值越小判定越宽（需移动距离越小）；0.6≈侧移约半个肩宽即触发
+const DODGE_X_THRESHOLD = 0.6;
+// 玩家最近出招历史（AI 读心）
+const playerHistory = [];
+
+// COMBO 连击：连续 PERFECT 满 3 次 → 下次命中伤害翻倍
+const COMBO_TRIGGER = 3;
+const COMBO_MULT = 2;
+let perfectStreak = 0;
+let comboBuff = false;
+
+// 回合状态：玩家连招 / 充能 / 出拳
+let bossMoves = [];        // Boss 本回合 5 招（固定套路）
+let nextBossMove = null;   // 兼容：Boss 当前展示/判定用单招（由 bossMoves[execSeg] 同步）
+let roundCharged = false;
+let roundPerfect = false;
+let chargeStart = 0;
+let execSeg = 0;        // EXECUTE 当前段索引（连招第几招）
+let execLen = 0;        // EXECUTE 段数（= 连招长度，至少 1）
+let bossHurtDone = false; // 本回合 Boss 是否已对玩家造成过一次伤害
+
+// ⚔️ 架势条系统：剪刀被石头防御（石头方）+1；闪避不累积、有架势则消耗 1 格换 100% 保命；下回合攻击（剪刀/升龙）结算消耗全部架势 +1/格
+let _origRandom = Math.random;   // playtest 用：保存原始随机函数
+let CHARGE_MAX = 10;             // 架势条上限（可在开发者面板调整）
+let playerCharge = 0;            // 玩家架势条当前值
+let bossCharge = 0;              // Boss 架势条当前值
+// 闪避联动：闪避成功 → 下回合攻击 +1（有架势则消耗 1 格，不累积架势）；失败 → 下回合攻击 -1
+// 闪避可躲一切攻击（剪刀/升龙），有架势→消耗1格100%成功；无架势→30%，失败受伤害+攻击-1
+let nextAtkMod = 0;              // 玩家下回合攻击修正（闪避联动）
+let bossNextAtkMod = 0;          // Boss 下回合攻击修正（Boss 闪避联动，作用于 Boss 对玩家攻击）
+let dodgeResolved = false;       // 闪避 vs 剪刀 判定是否已结算
+// 慢动作抢占先机：剪刀 vs 剪刀 → PREEMPT 窗口（蓝→金圆环）
+let preemptResolved = false;
+let preemptPunched = false;
+let preemptSeg = -1;
+let preemptResult = null;
+
+// 阶段：WAITING → SELECT(摆招倒计时) → CHARGE(攻击招充能暴击) → EXECUTE(判定) → COUNTER(闪避躲升龙后玩家反击) → BOSSRETALIATE(玩家升龙挥空后Boss防守反击) → PREEMPT(剪刀对拼抢占先机) → RESOLVE(结算)
+const PHASE = { WAITING:0, SELECT:1, CHARGE:2, EXECUTE:3, RESOLVE:4, GAMEOVER:5, VICTORY:6, COUNTER:7, PREEMPT:8, BOSSRETALIATE:9 };
+
+// ═══════════════════════════════════════════════════════════
+//  招式动画系统数据
+// ═══════════════════════════════════════════════════════════
+const EASING = {
+  easeInQuad: t => t*t,
+  easeOutQuad: t => t*(2-t),
+  easeOutBack: t => { const c1=1.70158, c3=c1+1; return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2); },
+  easeInOutSine: t => -(Math.cos(Math.PI*t)-1)/2,
+};
+
+function qFromEuler(x,y,z) {
+  return new THREE.Quaternion().setFromEuler(new THREE.Euler(x,y,z,'XYZ'));
+}
+
+// 人形白盒关节名
+const JOINTS = {
+  ROOT:'root', HIPS:'hips', SPINE:'spine', CHEST:'chest',
+  NECK:'neck', HEAD:'head',
+  L_CLAVICLE:'lClavicle', L_SHOULDER:'lShoulder', L_ELBOW:'lElbow', L_WRIST:'lWrist', L_HAND:'lHand',
+  R_CLAVICLE:'rClavicle', R_SHOULDER:'rShoulder', R_ELBOW:'rElbow', R_WRIST:'rWrist', R_HAND:'rHand',
+  L_HIP:'lHip', L_KNEE:'lKnee', L_ANKLE:'lAnkle', L_FOOT:'lFoot',
+  R_HIP:'rHip', R_KNEE:'rKnee', R_ANKLE:'rAnkle', R_FOOT:'rFoot',
+};
+
+// 姿态：每个关节的局部旋转（Quaternion）
+function makePose(obj) {
+  const p = {};
+  for (const k in JOINTS) {
+    const j = JOINTS[k];
+    if (obj[j]) p[j] = obj[j].clone();
+    else p[j] = new THREE.Quaternion();
+  }
+  return p;
+}
+
+// 关键帧：局部旋转，单位弧度
+const POSE_IDLE = makePose({
+  [JOINTS.L_CLAVICLE]: qFromEuler(0,0,0.10),
+  [JOINTS.R_CLAVICLE]: qFromEuler(0,0,-0.10),
+  [JOINTS.L_SHOULDER]: qFromEuler(0,0,0.08),
+  [JOINTS.R_SHOULDER]: qFromEuler(0,0,-0.08),
+  [JOINTS.L_ELBOW]: qFromEuler(0,0,0.10),
+  [JOINTS.R_ELBOW]: qFromEuler(0,0,-0.10),
+});
+
+const POSE_SCISSORS = {
+  WINDUP: makePose({
+    [JOINTS.R_SHOULDER]: qFromEuler(0,0,-0.35), [JOINTS.R_ELBOW]: qFromEuler(0,0,-1.55),
+    [JOINTS.R_WRIST]: qFromEuler(0,0,0),
+    [JOINTS.L_SHOULDER]: qFromEuler(0,0,0.25), [JOINTS.L_ELBOW]: qFromEuler(0,0,0.75),
+  }),
+  STRIKE: makePose({
+    [JOINTS.R_SHOULDER]: qFromEuler(0,0,-1.58), [JOINTS.R_ELBOW]: qFromEuler(0,0,0),
+    [JOINTS.R_WRIST]: qFromEuler(0,0,0),
+    [JOINTS.L_SHOULDER]: qFromEuler(0,0,0.25), [JOINTS.L_ELBOW]: qFromEuler(0,0,0.75),
+  }),
+  RECOVER: POSE_IDLE,
+};
+
+const POSE_DRAGON = {
+  WINDUP: makePose({
+    [JOINTS.R_SHOULDER]: qFromEuler(0,0,-0.20), [JOINTS.R_ELBOW]: qFromEuler(0,0,-0.80),
+    [JOINTS.R_WRIST]: qFromEuler(0,0,0),
+    [JOINTS.L_SHOULDER]: qFromEuler(0,0,0.20), [JOINTS.L_ELBOW]: qFromEuler(0,0,0.80),
+  }),
+  STRIKE: makePose({
+    [JOINTS.R_SHOULDER]: qFromEuler(0,0,-2.79), [JOINTS.R_ELBOW]: qFromEuler(0,0,-0.50),
+    [JOINTS.R_WRIST]: qFromEuler(0,0,0),
+    [JOINTS.L_SHOULDER]: qFromEuler(0,0,0.20), [JOINTS.L_ELBOW]: qFromEuler(0,0,0.80),
+  }),
+  RECOVER: POSE_IDLE,
+};
+
+const POSE_ROCK = {
+  WINDUP: makePose({
+    [JOINTS.L_SHOULDER]: qFromEuler(0,0,0.55), [JOINTS.L_ELBOW]: qFromEuler(0,0,0.35),
+    [JOINTS.R_SHOULDER]: qFromEuler(0,0,-0.55), [JOINTS.R_ELBOW]: qFromEuler(0,0,-0.35),
+    [JOINTS.CHEST]: qFromEuler(0.05,0,0),
+  }),
+  STRIKE: makePose({
+    [JOINTS.L_SHOULDER]: qFromEuler(0,0,0.80), [JOINTS.L_ELBOW]: qFromEuler(0.40,0.40,1.25),
+    [JOINTS.R_SHOULDER]: qFromEuler(0,0,-0.80), [JOINTS.R_ELBOW]: qFromEuler(0.40,-0.40,-1.25),
+    [JOINTS.L_WRIST]: qFromEuler(0.10,0,0), [JOINTS.R_WRIST]: qFromEuler(0.10,0,0),
+    [JOINTS.CHEST]: qFromEuler(0.10,0,0),
+  }),
+  RECOVER: POSE_IDLE,
+};
+
+const MOVE_CLIPS = {
+  scissors: { frames:[ {name:'WINDUP', pose:POSE_SCISSORS.WINDUP, duration:0.20, ease:EASING.easeInQuad}, {name:'STRIKE', pose:POSE_SCISSORS.STRIKE, duration:0.15, ease:EASING.easeOutBack}, {name:'RECOVER', pose:POSE_SCISSORS.RECOVER, duration:0.35, ease:EASING.easeInOutSine} ] },
+  dragon:   { frames:[ {name:'WINDUP', pose:POSE_DRAGON.WINDUP,   duration:0.20, ease:EASING.easeInQuad}, {name:'STRIKE', pose:POSE_DRAGON.STRIKE,   duration:0.15, ease:EASING.easeOutBack}, {name:'RECOVER', pose:POSE_DRAGON.RECOVER,   duration:0.35, ease:EASING.easeInOutSine} ] },
+  rock:     { frames:[ {name:'WINDUP', pose:POSE_ROCK.WINDUP,     duration:0.20, ease:EASING.easeInQuad}, {name:'STRIKE', pose:POSE_ROCK.STRIKE,     duration:0.15, ease:EASING.easeOutBack}, {name:'RECOVER', pose:POSE_ROCK.RECOVER,     duration:0.35, ease:EASING.easeInOutSine} ] },
+};
+
+function playMove(p, move) {
+  const m = MOVE_CLIPS[move] || MOVE_CLIPS.rock;
+  p.animState = { move, clip:m, phaseIdx:0, phaseT:0, active:true, highlightT:0 };
+}
+
+function updateMoveAnim(p, dt) {
+  const st = p.animState;
+  if (!st || !st.active) return;
+  const f = st.clip.frames[st.phaseIdx];
+  st.phaseT += dt / Math.max(0.001, f.duration);
+  if (st.highlightT > 0) st.highlightT -= dt;
+  if (st.phaseT >= 1) {
+    st.phaseT = 1;
+    st.phaseIdx++;
+    if (st.phaseIdx >= st.clip.frames.length) {
+      st.active = false; st.phaseIdx = st.clip.frames.length - 1; st.phaseT = 1;
+      applyPoseToRig(p.avatar, POSE_IDLE);
+      if (p.isBoss) applyBoxerGuard(p.avatar);
+      return;
+    } else {
+      st.phaseT = 0;
+      if (st.clip.frames[st.phaseIdx].name === 'STRIKE') st.highlightT = 0.12;
+    }
+  }
+  const a = st.clip.frames[st.phaseIdx-1] ? st.clip.frames[st.phaseIdx-1].pose : POSE_IDLE;
+  const b = st.clip.frames[st.phaseIdx].pose;
+  const t = st.clip.frames[st.phaseIdx].ease(st.phaseT);
+  const pose = blendPose(a, b, t);
+  applyPoseToRig(p.avatar, pose);
+
+  // 出招瞬间手臂高亮
+  if (st.highlightT > 0 && p.avatar.glowMat) {
+    const intensity = (st.highlightT / 0.12) * 2.5;
+    p.avatar.glowMat.emissiveIntensity = 0.35 + intensity;
+  } else if (p.avatar.glowMat) {
+    p.avatar.glowMat.emissiveIntensity = THREE.MathUtils.lerp(p.avatar.glowMat.emissiveIntensity, 0.35, dt*8);
+  }
+}
+
+function blendPose(a, b, t) {
+  const pose = {};
+  for (const k in JOINTS) {
+    const j = JOINTS[k];
+    const qa = a[j] || new THREE.Quaternion();
+    const qb = b[j] || new THREE.Quaternion();
+    pose[j] = new THREE.Quaternion().slerpQuaternions(qa, qb, t);
+  }
+  return pose;
+}
+
+function applyPoseToRig(rig, pose) {
+  if (!rig || !rig.bones) return;
+  for (const k in JOINTS) {
+    const j = JOINTS[k];
+    if (rig.bones[j] && rig.bones[j].group && pose[j]) {
+      rig.bones[j].group.quaternion.copy(pose[j]);
+    }
+  }
+}
+
+function resetAvatarPose(p) {
+  if (p && p.avatar) {
+    applyPoseToRig(p.avatar, POSE_IDLE);
+    p.animState = null;
+  }
+}
 
 // ═══════════════════════════════════════════════════════════
 //  DOM 引用
@@ -179,6 +803,18 @@ const poseDebugCanvas = document.getElementById('pose-debug-canvas');
 const poseDebugCtx = poseDebugCanvas.getContext('2d');
 const poseDebugCoords = document.getElementById('pose-debug-coords');
 let poseModelInfo = '未加载';
+// 开发者面板
+const devPanel = document.getElementById('dev-panel');
+const devMaxHp = document.getElementById('dev-maxhp');
+const devBossHp = document.getElementById('dev-bosshp');
+const devDmgScissors = document.getElementById('dev-dmg-scissors');
+const devDmgDragon = document.getElementById('dev-dmg-dragon');
+const devDmgPreempt = document.getElementById('dev-dmg-preempt');
+const devPreemptMs = document.getElementById('dev-preemptms');
+const devChargeMax = document.getElementById('dev-chargemax');
+const devGod = document.getElementById('dev-god');
+const devOneShot = document.getElementById('dev-oneshot');
+const devPoseDebug = document.getElementById('dev-pose-debug');
 
 // 镜像输入 canvas：前置摄像头底层帧未镜像，MediaPipe 对自拍镜像帧识别更好
 const poseInputCanvas = document.createElement('canvas');
@@ -195,19 +831,21 @@ const POSE_CONNECTIONS = [
 //  Three.js 场景
 // ═══════════════════════════════════════════════════════════
 const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 1.5));
 renderer.setSize(window.innerWidth, window.innerHeight);
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = THREE.PCFShadowMap;
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0d0d18);
 scene.fog = new THREE.Fog(0x0d0d18, 60, 140);
 
-const camera = new THREE.PerspectiveCamera(78, window.innerWidth/window.innerHeight, 0.1, 200);
-// 地铁跑酷式第三人称：摄像机居中看向正前方，轨道落在画面左侧、消失点（Boss）在画面中央
-camera.position.set(0, 5.0, -6);
-camera.lookAt(0, 1.2, 16);
+const camera = new THREE.PerspectiveCamera(72, window.innerWidth/window.innerHeight, 0.1, 200);
+// 过肩电视转播视角（参考 Tactic Boxing）：位于玩家右肩后上方，看向擂台中央的红方拳手
+const CAM_BASE = new THREE.Vector3(1.6, 2.6, 1.4);
+const CAM_LOOK = new THREE.Vector3(0, 2.5, 15.5);
+camera.position.copy(CAM_BASE);
+camera.lookAt(CAM_LOOK);
 
 const ambient = new THREE.AmbientLight(0xffffff, 0.55);
 scene.add(ambient);
@@ -224,175 +862,337 @@ const rimLight = new THREE.DirectionalLight(0x4ec9ff, 0.35);
 rimLight.position.set(-12, 8, -6);
 scene.add(rimLight);
 
-// ── 地面与三轨道（地铁跑酷式，轨道整体偏左、消失点在画面中央）──
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(200, 140), new THREE.MeshStandardMaterial({ color:0x10101a, roughness:0.95 }));
+// ═══════════════════════════════════════════════════════════
+//  阶段氛围区分系统（PhaseVisualSystem）
+//  选招回合=冷静深空蓝，BOSS攻击回合=危机警报红，六层联动
+// ═══════════════════════════════════════════════════════════
+const PHASE_THEMES = {
+  [PHASE.CHARGE]: {
+    bg: 0x0d1418, fog: 0x12202a,
+    ambient: { color: 0x3a4a58, intensity: 0.6 },
+    dir: { color: 0xbfe8ff, intensity: 1.05 },
+    rim: { color: 0xffd84d, intensity: 0.8 },
+    accent: '#FFD84D',
+    edge: { top: 'rgba(255,216,77,0.22)', bottom: 'rgba(78,201,255,0.10)' },
+    vignette: 'rgba(18,32,42,0.5)',
+    banner: { border: '#FFD84D', pulse: true },
+  },
+  [PHASE.SELECT]: {
+    bg: 0x0d0d18, fog: 0x101a2e,
+    ambient: { color: 0x404b60, intensity: 0.6 },
+    dir: { color: 0xaaccff, intensity: 1.0 },
+    rim: { color: 0x4ec9ff, intensity: 0.55 },
+    accent: '#4EC9FF',
+    edge: { top: 'rgba(78,201,255,0.13)', bottom: 'rgba(78,201,255,0.07)' },
+    vignette: 'rgba(16,26,46,0.45)',
+    banner: { border: '#4EC9FF', pulse: false },
+  },
+  [PHASE.EXECUTE]: {
+    bg: 0x180d0d, fog: 0x2a1410,
+    ambient: { color: 0x5a3a30, intensity: 0.7 },
+    dir: { color: 0xffc8a0, intensity: 1.15 },
+    rim: { color: 0xffd84d, intensity: 0.85 },
+    accent: '#FFD84D',
+    edge: { top: 'rgba(255,216,77,0.25)', bottom: 'rgba(255,60,60,0.12)' },
+    vignette: 'rgba(60,20,20,0.45)',
+    banner: { border: '#FFD84D', pulse: true },
+  },
+  [PHASE.RESOLVE]: {
+    bg: 0x14141f, fog: 0x1e2233,
+    ambient: { color: 0x50586a, intensity: 0.65 },
+    dir: { color: 0xffffff, intensity: 1.0 },
+    rim: { color: 0x8b5cf6, intensity: 0.7 },
+    accent: '#8B5CF6',
+    edge: { top: 'rgba(139,92,246,0.18)', bottom: 'rgba(139,92,246,0.08)' },
+    vignette: 'rgba(24,20,40,0.4)',
+    banner: { border: '#8B5CF6', pulse: false },
+  },
+  [PHASE.GAMEOVER]: {
+    bg: 0x1a0a0a, fog: 0x2a0d0d,
+    ambient: { color: 0x603030, intensity: 0.7 },
+    dir: { color: 0xff8888, intensity: 1.15 },
+    rim: { color: 0xff2d2d, intensity: 0.9 },
+    accent: '#FF2D2D',
+    edge: { top: 'rgba(255,45,45,0.30)', bottom: 'rgba(138,31,43,0.15)' },
+    vignette: 'rgba(138,31,43,0.6)',
+    banner: { border: '#FF2D2D', pulse: true },
+  },
+  [PHASE.VICTORY]: {
+    bg: 0x0a1a10, fog: 0x0f2a1a,
+    ambient: { color: 0x2a5038, intensity: 0.7 },
+    dir: { color: 0xc8ffd8, intensity: 1.15 },
+    rim: { color: 0x69f0ae, intensity: 0.9 },
+    accent: '#69F0AE',
+    edge: { top: 'rgba(105,240,174,0.25)', bottom: 'rgba(105,240,174,0.10)' },
+    vignette: 'rgba(16,40,28,0.45)',
+    banner: { border: '#69F0AE', pulse: true },
+  },
+  [PHASE.COUNTER]: {
+    bg: 0x1a1408, fog: 0x2a1c08,
+    ambient: { color: 0x5a4a20, intensity: 0.7 },
+    dir: { color: 0xffe0a0, intensity: 1.15 },
+    rim: { color: 0xffd84d, intensity: 0.95 },
+    accent: '#FFD84D',
+    edge: { top: 'rgba(255,216,77,0.28)', bottom: 'rgba(255,120,60,0.12)' },
+    vignette: 'rgba(40,30,10,0.5)',
+    banner: { border: '#FFD84D', pulse: true },
+  },
+  [PHASE.BOSSRETALIATE]: {
+    bg: 0x1a0d0d, fog: 0x2a1210,
+    ambient: { color: 0x5a2a28, intensity: 0.7 },
+    dir: { color: 0xffa8a0, intensity: 1.15 },
+    rim: { color: 0xff4d4d, intensity: 0.95 },
+    accent: '#FF6B6B',
+    edge: { top: 'rgba(255,77,77,0.30)', bottom: 'rgba(255,120,60,0.12)' },
+    vignette: 'rgba(48,16,16,0.55)',
+    banner: { border: '#FF6B6B', pulse: true },
+  },
+};
+
+const THEME_TRANSITION = { from: null, to: null, t: 0, duration: 0.6 };
+
+// 从 theme 提取灯光颜色（THREE.Color 缓存）
+const themeCache = {};
+function _tc(hex) {
+  if (!themeCache[hex]) themeCache[hex] = new THREE.Color(hex);
+  return themeCache[hex];
+}
+
+function applyPhaseTheme(phase, immediate=false) {
+  const to = PHASE_THEMES[phase] || PHASE_THEMES[PHASE.SELECT];
+  if (immediate || !THEME_TRANSITION.from) {
+    THEME_TRANSITION.from = to;
+    THEME_TRANSITION.to = to;
+    THEME_TRANSITION.t = 1;
+    applyThemeLights(to);
+    applyThemeCss(to);
+  } else {
+    THEME_TRANSITION.from = THEME_TRANSITION.to;
+    THEME_TRANSITION.to = to;
+    THEME_TRANSITION.t = 0;
+  }
+}
+
+function applyThemeLights(th) {
+  scene.background.copy(_tc(th.bg));
+  if (scene.fog) scene.fog.color.copy(_tc(th.fog));
+  ambient.color.copy(_tc(th.ambient.color)); ambient.intensity = th.ambient.intensity;
+  dirLight.color.copy(_tc(th.dir.color)); dirLight.intensity = th.dir.intensity;
+  rimLight.color.copy(_tc(th.rim.color)); rimLight.intensity = th.rim.intensity;
+}
+
+function applyThemeCss(th) {
+  document.documentElement.style.setProperty('--theme-accent', th.accent);
+  document.documentElement.style.setProperty('--theme-edge-top', th.edge.top);
+  document.documentElement.style.setProperty('--theme-edge-bottom', th.edge.bottom);
+  document.documentElement.style.setProperty('--theme-vignette', th.vignette);
+  const banner = document.getElementById('phase-indicator');
+  if (banner) banner.style.borderColor = th.banner.border;
+  if (banner) banner.dataset.pulse = th.banner.pulse ? 'on' : 'off';
+}
+
+function updateThemeTransition(dt) {
+  const tr = THEME_TRANSITION;
+  if (!tr.from || tr.t >= 1) return;
+  tr.t = Math.min(1, tr.t + dt / Math.max(0.001, tr.duration));
+  const f = tr.from, t = tr.to, k = tr.t;
+  // 颜色插值
+  scene.background.copy(_tc(f.bg)).lerp(_tc(t.bg), k);
+  scene.fog.color.copy(_tc(f.fog)).lerp(_tc(t.fog), k);
+  ambient.color.copy(_tc(f.ambient.color)).lerp(_tc(t.ambient.color), k);
+  ambient.intensity = f.ambient.intensity + (t.ambient.intensity - f.ambient.intensity) * k;
+  dirLight.color.copy(_tc(f.dir.color)).lerp(_tc(t.dir.color), k);
+  dirLight.intensity = f.dir.intensity + (t.dir.intensity - f.dir.intensity) * k;
+  rimLight.color.copy(_tc(f.rim.color)).lerp(_tc(t.rim.color), k);
+  rimLight.intensity = f.rim.intensity + (t.rim.intensity - f.rim.intensity) * k;
+  if (k >= 1) applyThemeCss(t);
+}
+
+// ── 拳击八角笼擂台（参考 Tactic Boxing 电视转播感）──
+const PLAYER_Z = 6.2;      // 玩家站位（近侧）
+const BOSS_Z = 15.8;       // 红方拳手站位（远侧）
+const MID_Z = (PLAYER_Z + BOSS_Z) / 2;   // 擂台中央
+const CLASH_GAP = 0.7;                   // 贴身肉搏对峙时的相对间距（避免模型重叠）
+const CLASH_Z_PLAYER = MID_Z - CLASH_GAP; // 玩家从近侧(6.2)冲向中央后停靠位
+const CLASH_Z_BOSS   = MID_Z + CLASH_GAP; // Boss 从远侧(15.8)冲向中央后停靠位
+const OCT_R = 6.6;         // 八角笼外接半径
+const OCT_CX = 0, OCT_CZ = 11;
+const ground = new THREE.Mesh(new THREE.PlaneGeometry(160, 160), new THREE.MeshStandardMaterial({ color:0x0b0b12, roughness:0.95 }));
 ground.rotation.x = -Math.PI/2;
-ground.position.set(0, 0, 16);
+ground.position.set(0, -0.02, OCT_CZ);
 ground.receiveShadow = true;
 scene.add(ground);
 
-// 道路：比三条轨道更宽的深色沥青带，整体左移到 WORLD_SHIFT_X（4 人时外侧玩家也能站上路面）
-const TRACK_W = 3.8;
-const ROAD_W = 13.0;
-const road = new THREE.Mesh(new THREE.PlaneGeometry(ROAD_W, 46), new THREE.MeshStandardMaterial({ color:0x1b1b2a, roughness:0.9 }));
-road.rotation.x = -Math.PI/2;
-road.position.set(WORLD_SHIFT_X, 0.01, 17);
-road.receiveShadow = true;
-scene.add(road);
+// 观众席荧光棒光点（避免复杂建模，营造暗场舞台氛围）
+const crowdMat = new THREE.MeshBasicMaterial({ color:0x2a4a6a, transparent:true, opacity:0.6 });
+for (let i = 0; i < 30; i++) {
+  const a = Math.random()*Math.PI*2, r = 9 + Math.random()*28;
+  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.32, 4), crowdMat);
+  c.position.set(Math.cos(a)*r, 0.16, OCT_CZ + Math.sin(a)*r);
+  scene.add(c);
+}
 
-// 三条轨道：中灰跑道 + 亮黄边界线 + 前进箭头，加宽并左移，保证画面内三条轨道肉眼可辨
-const TRACK_X = [-LANE_STEP, 0, LANE_STEP].map(x => x + WORLD_SHIFT_X);
-const laneMat = new THREE.MeshStandardMaterial({ color:0x3c3c56, roughness:0.65, metalness:0.12 });
-const yellow = new THREE.MeshBasicMaterial({ color:0xffd000 });
-for (const x of TRACK_X) {
-  const s = new THREE.Mesh(new THREE.PlaneGeometry(TRACK_W, 46), laneMat);
-  s.rotation.x = -Math.PI/2;
-  s.position.set(x, 0.02, 17);
-  s.receiveShadow = true;
-  scene.add(s);
+// 八角笼主体
+const octagon = new THREE.Group();
+const platform = new THREE.Mesh(
+  new THREE.CylinderGeometry(OCT_R, OCT_R, 0.4, 8),
+  new THREE.MeshStandardMaterial({ color:0x151a28, roughness:0.6, metalness:0.25 })
+);
+platform.position.set(OCT_CX, 0.2, OCT_CZ);
+platform.receiveShadow = true;
+octagon.add(platform);
+const ringLine = new THREE.Mesh(
+  new THREE.RingGeometry(OCT_R - 0.45, OCT_R - 0.2, 8),
+  new THREE.MeshBasicMaterial({ color:0x2a3a55, transparent:true, opacity:0.7, side:THREE.DoubleSide })
+);
+ringLine.rotation.x = -Math.PI/2;
+ringLine.position.set(OCT_CX, 0.41, OCT_CZ);
+octagon.add(ringLine);
+const postMat = new THREE.MeshStandardMaterial({ color:0x5a1f1f, roughness:0.4, metalness:0.6 });
+for (let i = 0; i < 8; i++) {
+  const a = i/8*Math.PI*2;
+  const px = OCT_CX + Math.cos(a)*OCT_R, pz = OCT_CZ + Math.sin(a)*OCT_R;
+  const post = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 1.7, 8), postMat);
+  post.position.set(px, 0.85, pz);
+  post.castShadow = true;
+  octagon.add(post);
 }
-// 轨道边界/分隔亮黄实线（3 条轨道 → 左右外侧各 1 条 + 中间分隔 2 条）
-const LINE_X = [-(LANE_STEP + TRACK_W/2), -LANE_STEP/2, LANE_STEP/2, LANE_STEP + TRACK_W/2].map(x => x + WORLD_SHIFT_X);
-for (const x of LINE_X) {
-  const ln = new THREE.Mesh(new THREE.PlaneGeometry(0.12, 46), yellow);
-  ln.rotation.x = -Math.PI/2;
-  ln.position.set(x, 0.04, 17);
-  scene.add(ln);
-}
-// 每条轨道中央的前进箭头（半透明三角，尖端朝 +Z 前进方向）
-const chevGeo = new THREE.BufferGeometry();
-chevGeo.setAttribute('position', new THREE.Float32BufferAttribute([0,0.28,0, -0.24,-0.22,0, 0.24,-0.22,0], 3));
-chevGeo.setIndex([0,1,2]);
-const chevMat = new THREE.MeshBasicMaterial({ color:0xffe066, transparent:true, opacity:0.45, side:THREE.DoubleSide });
-for (const x of TRACK_X) {
-  for (let z = 2; z <= 30; z += 7) {
-    const cv = new THREE.Mesh(chevGeo, chevMat);
-    cv.rotation.x = Math.PI/2; // 平放，尖端朝 +Z（前进方向）
-    cv.position.set(x, 0.05, z);
-    scene.add(cv);
+const ropeMat = new THREE.MeshStandardMaterial({ color:0xddddE8, roughness:0.8 });
+const upAxis = new THREE.Vector3(0, 1, 0);
+for (let h = 0; h < 3; h++) {
+  const y = 0.5 + h*0.45;
+  for (let i = 0; i < 8; i++) {
+    const a1 = i/8*Math.PI*2, a2 = (i+1)/8*Math.PI*2;
+    const p1 = new THREE.Vector3(OCT_CX + Math.cos(a1)*OCT_R, y, OCT_CZ + Math.sin(a1)*OCT_R);
+    const p2 = new THREE.Vector3(OCT_CX + Math.cos(a2)*OCT_R, y, OCT_CZ + Math.sin(a2)*OCT_R);
+    const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, p1.distanceTo(p2), 6), ropeMat);
+    rope.position.copy(p1).add(p2).multiplyScalar(0.5);
+    rope.quaternion.setFromUnitVectors(upAxis, p2.clone().sub(p1).normalize());
+    octagon.add(rope);
   }
 }
+// 擂台正上方聚光灯（舞台聚光，恒定不受阶段主题影响）
+const spotLight = new THREE.SpotLight(0xffffff, 2.4, 60, Math.PI/4.5, 0.55, 1.0);
+spotLight.position.set(OCT_CX, 16, OCT_CZ);
+spotLight.target.position.set(OCT_CX, 0, OCT_CZ);
+scene.add(spotLight, spotLight.target);
+scene.add(octagon);
 
-// ── Boss：红色立方体（巨大，居中在远处）──
-const bossGroup = new THREE.Group();
-const bossBox = new THREE.Mesh(new THREE.BoxGeometry(14, 28, 12), new THREE.MeshStandardMaterial({ color:0xcc2233, roughness:0.6, metalness:0.1 }));
-bossBox.position.set(0, 14, 0);
-bossBox.castShadow = true;
-bossGroup.add(bossBox);
-const eyeMat = new THREE.MeshStandardMaterial({ color:0xffcc22, emissive:0xcc8800 });
-const eyeGeo = new THREE.SphereGeometry(1.1, 12, 12);
-const eyeL = new THREE.Mesh(eyeGeo, eyeMat); eyeL.position.set(-2.3, 20, 6.2);
-const eyeR = new THREE.Mesh(eyeGeo, eyeMat); eyeR.position.set(2.3, 20, 6.2);
-bossGroup.add(eyeL, eyeR);
-// 嘴（白牙）
-const mouth = new THREE.Mesh(new THREE.BoxGeometry(4, 0.8, 0.4), new THREE.MeshStandardMaterial({ color:0xffffff }));
-mouth.position.set(0, 12, 6.2);
-bossGroup.add(mouth);
-bossGroup.position.set(0, 0, 36);
-scene.add(bossGroup);
+// ═══════════════════════════════════════════════════════════
+//  红色拳击手 BOSS（复用白盒骨骼体系，红色材质 + 拳套）
+//  体积与玩家一致（略粗壮 1.15 倍），双方共用招式动画
+// ═══════════════════════════════════════════════════════════
+const boss = { avatar:null, group:null, animState:null, hitFlashT:0, deathT:-1, isBoss:true };
 
-// 预警 3D 对象
-const warnGroup = new THREE.Group();
-scene.add(warnGroup);
-const warnRect = new THREE.Mesh(new THREE.PlaneGeometry(5.0, 5.6), new THREE.MeshBasicMaterial({ color:0xff2020, transparent:true, opacity:0.65, side:THREE.DoubleSide }));
-warnRect.rotation.set(0, Math.PI, 0); // 竖直立起，面向玩家方向
-warnGroup.add(warnRect);
-const exMark = makeTextSprite('!', 220, '#fff');
-exMark.scale.set(4.0, 4.0, 1);
-warnGroup.add(exMark);
-const rangeRing = new THREE.Mesh(new THREE.RingGeometry(0.6, 1.0, 40), new THREE.MeshBasicMaterial({ color:0xff2222, transparent:true, opacity:0.9, side:THREE.DoubleSide }));
-rangeRing.rotation.x = -Math.PI/2;
-warnGroup.add(rangeRing);
-const pulseRing = new THREE.Mesh(new THREE.RingGeometry(0.75, 0.95, 40), new THREE.MeshBasicMaterial({ color:0xffdd22, transparent:true, opacity:0.75, side:THREE.DoubleSide }));
-pulseRing.rotation.x = -Math.PI/2;
-warnGroup.add(pulseRing);
-const beamGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
-const beamLine = new THREE.Line(beamGeo, new THREE.LineBasicMaterial({ color:0xff3333, transparent:true, opacity:0.85 }));
-warnGroup.add(beamLine);
-warnGroup.visible = false;
+// 拳击架势（双手护脸）
+function applyBoxerGuard(av) {
+  const b = av.bones;
+  b[JOINTS.L_SHOULDER].group.rotation.set(0, 0, 1.0);
+  b[JOINTS.L_ELBOW].group.rotation.set(0, 0, -1.8);
+  b[JOINTS.R_SHOULDER].group.rotation.set(0, 0, -1.0);
+  b[JOINTS.R_ELBOW].group.rotation.set(0, 0, 1.8);
+}
+
+function createBoxer() {
+  const av = createAvatar(0, true);
+  av.group.scale.setScalar(1.15);
+  av.group.position.set(0, 0, BOSS_Z);
+  av.group.rotation.y = Math.PI;
+  scene.add(av.group);
+  boss.avatar = av;
+  boss.group = av.group;
+  applyBoxerGuard(av);
+}
+
+// 受击闪白
+function bossFlash(f) {
+  boss.group.traverse(o => { if (o.isMesh && o.material && o.material.emissive) o.material.emissiveIntensity = 0.1 + f*2.0; });
+}
+
+function updateBoxer(dt, now) {
+  const g = boss.group;
+  // 倒地（死亡）动画
+  if (boss.deathT >= 0) {
+    boss.deathT += dt;
+    const t = boss.deathT;
+    const rot = Math.min(Math.PI/2, t*1.1);
+    g.rotation.x = rot;
+    g.rotation.y = Math.PI;
+    g.position.y = -Math.sin(rot)*0.8;
+    if (t > 2.0) {
+      const fade = Math.max(0, 1 - (t-2.0)*0.4);
+      g.traverse(o => { if (o.isMesh) { o.material.transparent = true; o.material.opacity = fade; } });
+    }
+    return;
+  }
+  g.position.set(0, 0, BOSS_Z);
+  g.rotation.y = Math.PI;
+  // 贴身肉搏：PREEMPT/COUNTER/BOSSRETALIATE 阶段从擂台远侧冲向中央，其余阶段退回站位
+  const clashTarget = (phase === PHASE.PREEMPT || phase === PHASE.COUNTER || phase === PHASE.BOSSRETALIATE) ? CLASH_Z_BOSS : BOSS_Z;
+  if (boss.clashZ === undefined) boss.clashZ = BOSS_Z;
+  boss.clashZ = THREE.MathUtils.lerp(boss.clashZ, clashTarget, Math.min(1, dt * 12));
+  g.position.z = boss.clashZ;
+  // 出招前扑（朝玩家 -Z 方向 lunge）
+  const st = boss.animState;
+  let lunge = 0;
+  if (st && st.active && st.clip.frames[st.phaseIdx]) {
+    const f = st.clip.frames[st.phaseIdx];
+    if (f.name === 'STRIKE') lunge = Math.sin(st.phaseT*Math.PI) * 0.85;
+    if (f.name === 'WINDUP') lunge = -0.12;
+  }
+  g.position.z = boss.clashZ - lunge;
+  // 升龙拳：手臂上举并整个人跳起
+  let jumpY = 0;
+  if (st && st.active && st.move === 'dragon') {
+    const f = st.clip.frames[st.phaseIdx];
+    if (f.name === 'STRIKE') jumpY = Math.sin(st.phaseT*Math.PI) * 1.35;
+    else if (f.name === 'WINDUP') jumpY = -0.12;
+  }
+  // 受击后仰
+  if (boss.hitFlashT > 0) {
+    boss.hitFlashT -= dt;
+    bossFlash(Math.max(0, boss.hitFlashT/0.25));
+    g.rotation.z = 0.1;
+  } else {
+    g.rotation.z = 0;
+  }
+  // 待机呼吸 + 升龙跳跃
+  g.position.y += jumpY + Math.sin(now*0.0016)*0.03;
+  updateMoveAnim(boss, dt);
+}
 
 function makeTextSprite(text, fontSize, color) {
+  // 自适应画布：按文本实际宽度扩张，避免长文字（如"连击 -4"）被 256px 画布裁成"切一刀"
   const c = document.createElement('canvas');
-  c.width = c.height = 256;
+  const tmp = c.getContext('2d');
+  tmp.font = `900 ${fontSize}px Arial`;
+  const tw = Math.ceil(tmp.measureText(text).width);
+  const pad = Math.ceil(fontSize*0.6);          // 左右留白，防描边被裁
+  const W = Math.max(256, tw + pad*2);
+  const H = Math.max(256, fontSize*2);
+  c.width = W; c.height = H;
   const g = c.getContext('2d');
   g.font = `900 ${fontSize}px Arial`;
   g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.lineWidth = 18; g.strokeStyle = '#000000aa'; g.strokeText(text, 128, 128);
-  g.fillStyle = color; g.fillText(text, 128, 128);
-  const tex = new THREE.CanvasTexture(c);
-  return new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false }));
-}
-
-// ── 轨道右侧 3D 告示牌（怎么玩）──
-function createSignTexture() {
-  const c = document.createElement('canvas');
-  c.width = 1024; c.height = 1280;
-  const g = c.getContext('2d');
-  // 底板：保持较暗背景不变
-  g.fillStyle = '#161824';
-  g.fillRect(0,0,c.width,c.height);
-  // 边框：更亮的金黄
-  g.lineWidth = 24; g.strokeStyle = '#ffdd77'; g.strokeRect(18,18,c.width-36,c.height-36);
-  // 标题背景
-  g.fillStyle = '#222436'; g.fillRect(40,40,c.width-80,160);
-  // 标题：亮度提高
-  g.font = 'bold 96px "Segoe UI", "Microsoft YaHei", sans-serif';
-  g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillStyle = '#ffeebb'; g.fillText('🎮 怎么玩', c.width/2, 120);
-  // 内容
-  const rows = [
-    { icon:'✂️', title:'剪刀', desc:'手臂前刺 · 1 伤', color:'#7fffb3' },
-    { icon:'🐉', title:'升龙拳', desc:'手臂上勾 · 2 伤', color:'#ffd84d' },
-    { icon:'🪨', title:'石头', desc:'双臂交叉 · 防御/反击', color:'#6fd3ff' },
-    { icon:'🚫', title:'垂手', desc:'不出招', color:'#a78bfa' },
-    { icon:'↔️', title:'身体侧倾', desc:'换轨道躲闪', color:'#ff8585' },
-  ];
-  let y = 280;
-  for (const row of rows) {
-    g.font = 'bold 72px "Segoe UI", "Microsoft YaHei", sans-serif';
-    g.textAlign = 'left'; g.textBaseline = 'middle';
-    g.fillStyle = row.color;
-    g.fillText(`${row.icon} ${row.title}`, 80, y);
-    g.font = '46px "Segoe UI", "Microsoft YaHei", sans-serif';
-    g.fillStyle = '#f0f4fa'; // 提高描述文字亮度
-    g.fillText(row.desc, 80, y+82);
-    y += 210;
-  }
-  // 底部提示
-  g.font = '40px "Segoe UI", "Microsoft YaHei", sans-serif';
-  g.textAlign = 'center'; g.fillStyle = '#b0c4de';
-  g.fillText('请退后一步，让全身入镜', c.width/2, c.height-70);
+  g.lineWidth = 18; g.strokeStyle = '#000000aa'; g.strokeText(text, W/2, H/2);
+  g.fillStyle = color; g.fillText(text, W/2, H/2);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  return tex;
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map:tex, transparent:true, depthTest:false }));
+  // 记录原始宽高比，供调用方保持比例（默认按 256 基准 scale=1.6 缩放）
+  s.userData.aspect = W/H;
+  c.__text = text;  // 调试：记录文本便于校验画布尺寸
+  return s;
 }
-function createSignBoard() {
-  const W = 4.2, H = 5.6, D = 0.35;
-  const frameMat = new THREE.MeshStandardMaterial({ color:0x3a3a4a, roughness:0.7, metalness:0.2 });
-  // 正面自发光材质：背景保持暗色但文字更亮
-  const faceMat = new THREE.MeshStandardMaterial({
-    map:createSignTexture(), roughness:0.6, metalness:0.05,
-    emissive:0x111320, emissiveMap:createSignTexture(), emissiveIntensity:0.35
-  });
-  const materials = [frameMat, frameMat, frameMat, frameMat, faceMat, frameMat]; // +Z 面为正面
-  const board = new THREE.Mesh(new THREE.BoxGeometry(W, H, D), materials);
-  board.castShadow = true; board.receiveShadow = true;
-  // 移到玩家面前（z=5 附近），便于开始阅读玩法
-  board.position.set(WORLD_SHIFT_X - LANE_STEP - TRACK_W/2 - 2.4, H/2 + 0.1, 5);
-  board.lookAt(WORLD_SHIFT_X, H/2, 1);
-  scene.add(board);
-  // 底座
-  const base = new THREE.Mesh(new THREE.BoxGeometry(W+0.4, 0.2, D+0.8), frameMat);
-  base.position.set(0, 0.1, 0); board.add(base);
-  return board;
-}
-const signBoard = createSignBoard();
 
 // 漂浮伤害
 const floatPool = [];
 function spawnFloat(pos3, text, color) {
   const s = makeTextSprite(text, 120, color);
-  s.position.copy(pos3); s.position.y += 1.5; s.scale.set(1.6, 1.6, 1);
+  s.position.copy(pos3); s.position.y += 1.5;
+  // 按文本宽高比缩放：高度保持 1.6，宽度随文字长度伸展，避免文字被压扁/裁切
+  const a = (s.userData.aspect || 1);
+  s.scale.set(1.6*a, 1.6, 1);
   scene.add(s);
   floatPool.push({ sprite:s, life:1.0, vy:2.0 });
 }
@@ -415,42 +1215,138 @@ const PLAYER_STYLES = [
   { color:0xefe8ff, name:'P4', label:'#8b5cf6' },
 ];
 
-// 双肩位置（相对 avatar 组，贴在躯干圆柱体两侧）——手臂从此处伸出，模拟真人
-const SHL = new THREE.Vector3(-0.42, 1.08, 0);
-const SHR = new THREE.Vector3(0.42, 1.08, 0);
-
-function createAvatar() {
-  const g = new THREE.Group();
-  const white = new THREE.MeshStandardMaterial({ color:0xf2f2f5, roughness:0.75 });
-  // 躯干：大圆柱胶囊（脚落地→肩膀），范围约 y 0~1.48
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.42, 0.62, 6, 12), white.clone());
-  torso.position.set(0, 0.75, 0);
-  torso.castShadow = true; g.add(torso);
-  // 头：放在躯干顶端，紧贴肩膀上方
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.26, 16, 16), white.clone());
-  head.position.set(0, 1.62, 0);
-  head.castShadow = true; g.add(head);
-  const armMat = () => new THREE.MeshStandardMaterial({ color:0xfafafc, roughness:0.7 });
-  const upperL = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,1,10), armMat());
-  const upperR = new THREE.Mesh(new THREE.CylinderGeometry(0.16,0.16,1,10), armMat());
-  const foreL  = new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.13,1,10), armMat());
-  const foreR  = new THREE.Mesh(new THREE.CylinderGeometry(0.13,0.13,1,10), armMat());
-  [upperL,upperR,foreL,foreR].forEach(m => m.castShadow = true);
-  g.add(upperL, upperR, foreL, foreR);
-  const core = new THREE.Mesh(new THREE.SphereGeometry(0.12,12,12), new THREE.MeshBasicMaterial({ color:0x22ff88, transparent:true, opacity:0.9 }));
-  g.add(core);
-  return { group:g, torso, head, upperL, upperR, foreL, foreR, core };
+// 创建胶囊几何体，兼容 THREE.js 版本（<0.165 无 CapsuleGeometry 时使用 Lathe）
+function makeCapsule(r, len, capSegs=2, radialSegs=8) {
+  if (typeof THREE.CapsuleGeometry !== 'undefined') {
+    return new THREE.CapsuleGeometry(r, len, capSegs, radialSegs);
+  }
+  // 退化：圆柱 + 半球
+  const geo = new THREE.CylinderGeometry(r, r, Math.max(0.001, len), radialSegs, 1, true);
+  return geo;
 }
 
+function createAvatar(styleIndex=0, isBoss=false) {
+  const g = new THREE.Group();
+  g.name = isBoss ? 'boxer-root' : 'avatar-root';
+  const style = PLAYER_STYLES[styleIndex] || PLAYER_STYLES[0];
+  const playerColorHex = isBoss ? '#ff2d2d' : (typeof style.label === 'string' ? style.label : '#4ec9ff');
+  const whiteMat = new THREE.MeshStandardMaterial({ color: isBoss ? 0xc83737 : 0xf2f2f5, roughness: isBoss ? 0.6 : 0.7, metalness: isBoss ? 0.15 : 0.05 });
+  const glowMat = new THREE.MeshStandardMaterial({ color:playerColorHex, emissive:playerColorHex, emissiveIntensity:0.35, roughness:0.4, transparent:true, opacity:0.9 });
+  const jointMat = new THREE.MeshStandardMaterial({ color: isBoss ? 0x8a1f2b : 0xe8e8ed, roughness:0.5 });
+  const gloveMat = new THREE.MeshStandardMaterial({ color:0xff2d2d, roughness:0.45, metalness:0.1 });
+
+  const bones = {};
+  function bone(name, parent, geo, mat, pos, visible=true) {
+    const group = new THREE.Group(); group.name = name;
+    if (parent) parent.add(group);
+    else g.add(group);
+    if (geo) {
+      const mesh = new THREE.Mesh(geo, mat);
+      mesh.castShadow = true; mesh.receiveShadow = true;
+      mesh.visible = visible;
+      group.add(mesh);
+      bones[name] = { group, mesh };
+    } else {
+      bones[name] = { group };
+    }
+    if (pos) group.position.copy(pos);
+    return group;
+  }
+  function jointSphere(parent, r=0.04) {
+    const m = new THREE.Mesh(new THREE.SphereGeometry(r, 6, 4), jointMat);
+    m.castShadow = true; parent.add(m); return m;
+  }
+  function outline(mesh, scale=1.08) {
+    const o = mesh.clone();
+    o.material = new THREE.MeshBasicMaterial({ color:playerColorHex, side:THREE.BackSide, transparent:true, opacity:0.35 });
+    o.scale.setScalar(scale);
+    mesh.add(o);
+    return o;
+  }
+
+  // 根位于脚底（y=0）
+  const root = bone(JOINTS.ROOT, null, null, null, new THREE.Vector3(0,0,0));
+  const hips = bone(JOINTS.HIPS, root, null, null, new THREE.Vector3(0, 0.92, 0));
+  // 骨盆
+  const pelvisGeo = new THREE.SphereGeometry(0.22, 8, 6);
+  pelvisGeo.scale(1, 0.65, 0.85);
+  const pelvis = new THREE.Mesh(pelvisGeo, whiteMat); pelvis.castShadow=true; hips.add(pelvis); outline(pelvis, 1.06);
+  // 脊柱-胸腔（箱型胸廓：横向更宽、肩更壮，呈倒梯形拳击身材）
+  const spine = bone(JOINTS.SPINE, hips, null, null, new THREE.Vector3(0, 0.18, 0));
+  const chestGeo = new THREE.SphereGeometry(0.23, 8, 6);
+  chestGeo.scale(1.35, 1.1, 0.9);
+  const chest = bone(JOINTS.CHEST, spine, chestGeo, whiteMat, new THREE.Vector3(0, 0.34, 0));
+  outline(chest.children[0], 1.06);
+  // 肩部三角肌（增强出拳时的肩宽轮廓）
+  const lDeltGeo = new THREE.SphereGeometry(0.085, 8, 6);
+  const rDeltGeo = new THREE.SphereGeometry(0.085, 8, 6);
+  // 颈-头（带下巴的圆润头部）
+  const neck = bone(JOINTS.NECK, chest, new THREE.CylinderGeometry(0.08, 0.09, 0.12, 8), whiteMat, new THREE.Vector3(0, 0.38, 0));
+  const head = bone(JOINTS.HEAD, neck, new THREE.SphereGeometry(0.24, 8, 6), whiteMat, new THREE.Vector3(0, 0.24, 0));
+  outline(head.children[0], 1.06);
+  const chinGeo = new THREE.SphereGeometry(0.13, 8, 6);
+  chinGeo.scale(1, 0.8, 0.9);
+  const chin = new THREE.Mesh(chinGeo, whiteMat); chin.castShadow = true;
+  chin.position.set(0, -0.14, 0.05);
+  head.add(chin);
+
+  // 左臂
+  const lClavicle = bone(JOINTS.L_CLAVICLE, chest, lDeltGeo, whiteMat, new THREE.Vector3(-0.18, 0.18, 0));
+  const lShoulder = bone(JOINTS.L_SHOULDER, lClavicle, null, null, new THREE.Vector3(-0.16, 0, 0));
+  jointSphere(lShoulder, 0.07);
+  const lUpperArm = bone(JOINTS.L_ELBOW, lShoulder, makeCapsule(0.07, 0.28, 2, 8), whiteMat, new THREE.Vector3(0, -0.22, 0));
+  const lForeArm = bone(JOINTS.L_WRIST, lUpperArm, makeCapsule(0.065, 0.26, 2, 8), whiteMat, new THREE.Vector3(0, -0.26, 0));
+  // 拳套：圆润的握拳造型（玩家为白盒本色，Boss 为红拳套）
+  const gloveGeo = new THREE.SphereGeometry(0.11, 8, 6);
+  gloveGeo.scale(1, 1.15, 1.2);
+  const handMat = isBoss ? gloveMat : whiteMat;
+  const lHand = bone(JOINTS.L_HAND, lForeArm, gloveGeo, handMat, new THREE.Vector3(0, -0.17, 0));
+  // 右臂
+  const rClavicle = bone(JOINTS.R_CLAVICLE, chest, rDeltGeo, whiteMat, new THREE.Vector3(0.18, 0.18, 0));
+  const rShoulder = bone(JOINTS.R_SHOULDER, rClavicle, null, null, new THREE.Vector3(0.16, 0, 0));
+  jointSphere(rShoulder, 0.07);
+  const rUpperArm = bone(JOINTS.R_ELBOW, rShoulder, makeCapsule(0.07, 0.28, 2, 8), whiteMat, new THREE.Vector3(0, -0.22, 0));
+  const rForeArm = bone(JOINTS.R_WRIST, rUpperArm, makeCapsule(0.065, 0.26, 2, 8), whiteMat, new THREE.Vector3(0, -0.26, 0));
+  const rHand = bone(JOINTS.R_HAND, rForeArm, gloveGeo, handMat, new THREE.Vector3(0, -0.17, 0));
+
+  // 左腿
+  const lHip = bone(JOINTS.L_HIP, hips, null, null, new THREE.Vector3(-0.12, -0.05, 0));
+  jointSphere(lHip, 0.09);
+  const lThigh = bone(JOINTS.L_KNEE, lHip, makeCapsule(0.10, 0.40, 2, 8), whiteMat, new THREE.Vector3(0, -0.28, 0));
+  const lShin = bone(JOINTS.L_ANKLE, lThigh, makeCapsule(0.09, 0.40, 2, 8), whiteMat, new THREE.Vector3(0, -0.28, 0));
+  const lFoot = bone(JOINTS.L_FOOT, lShin, new THREE.BoxGeometry(0.12, 0.08, 0.25), whiteMat, new THREE.Vector3(0, -0.24, 0.06));
+  // 右腿
+  const rHip = bone(JOINTS.R_HIP, hips, null, null, new THREE.Vector3(0.12, -0.05, 0));
+  jointSphere(rHip, 0.09);
+  const rThigh = bone(JOINTS.R_KNEE, rHip, makeCapsule(0.10, 0.40, 2, 8), whiteMat, new THREE.Vector3(0, -0.28, 0));
+  const rShin = bone(JOINTS.R_ANKLE, rThigh, makeCapsule(0.09, 0.40, 2, 8), whiteMat, new THREE.Vector3(0, -0.28, 0));
+  const rFoot = bone(JOINTS.R_FOOT, rShin, new THREE.BoxGeometry(0.12, 0.08, 0.25), whiteMat, new THREE.Vector3(0, -0.24, 0.06));
+
+  // 胸口核心（仅受击判定点，不是骨骼）
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.10, 8, 6), glowMat.clone());
+  core.position.set(0, 0.05, 0.28);
+  chest.add(core);
+
+  // 初始 A-Pose：双臂自然下垂外展
+  bones[JOINTS.L_CLAVICLE].group.rotation.z = 0.10;
+  bones[JOINTS.R_CLAVICLE].group.rotation.z = -0.10;
+  bones[JOINTS.L_SHOULDER].group.rotation.z = 0.08;
+  bones[JOINTS.R_SHOULDER].group.rotation.z = -0.08;
+
+  return { group:g, bones, core, whiteMat, glowMat };
+}
+
+// 将局部旋转（Quaternion）应用到指定骨骼
+function setJointRotation(rig, name, q) {
+  const b = rig.bones[name];
+  if (b && b.group) b.group.quaternion.copy(q);
+}
+function setJointEuler(rig, name, x, y, z) {
+  const b = rig.bones[name];
+  if (b && b.group) b.group.rotation.set(x, y, z);
+}
 function setLimb(mesh, a, b) {
-  const mid = new THREE.Vector3().addVectors(a, b).multiplyScalar(0.5);
-  mesh.position.copy(mid);
-  const dir = new THREE.Vector3().subVectors(b, a);
-  const len = dir.length();
-  if (len < 0.001) { mesh.visible = false; return; }
-  mesh.visible = true;
-  mesh.scale.set(1, len, 1);
-  mesh.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0), dir.normalize());
+  // 旧接口保留但不再使用，避免外部调用报错
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -513,7 +1409,8 @@ function classifyGesture(lm) {
   const lW=P(KP.L_WRIST), rW=P(KP.R_WRIST);
   const minVis=0.25;
   if (lS.v<minVis || rS.v<minVis) return null;
-  const sw = Math.abs(rS.x-lS.x);
+  // 灵敏度（0.85/1.0/1.15）+ 校准肩宽归一化（默认 0.14）共同缩放判定尺度
+  const sw = Math.abs(rS.x-lS.x) * SENS_MAP[SENSITIVITY] * (CALIB_SHOULDER/0.14);
   if (sw < 0.05) return null;
   const nose = lm[KP.NOSE];
   const noseY = (nose && nose.visibility>0.4) ? nose.y : (lS.y+rS.y)/2 - sw*0.55;
@@ -528,49 +1425,45 @@ function classifyGesture(lm) {
     const wMidY = (lW.y+rW.y)/2;
     if (wDist < sw*0.95 && wMidY > neckY-0.02 && wMidY < hipY-0.02) return MOVE.STONE;
   }
-  // 剪刀：手臂水平前伸
-  const stab = (w,e,s,side) => (w.v>minVis && e.v>minVis) && (side==='left'? w.x<e.x-0.03 : w.x>e.x+0.03) && Math.abs(w.y-s.y)<0.16;
+  // 剪刀：手臂水平前伸（须低于头颈中点，避免与"举手不出招"混淆）
+  const headNeckMid = (noseY + neckY)/2;
+  const stab = (w,e,s,side) => (w.v>minVis && e.v>minVis) && (side==='left'? w.x<e.x-0.03 : w.x>e.x+0.03) && Math.abs(w.y-s.y)<0.16 && w.y > headNeckMid;
   if (stab(lW,lE,lS,'left') || stab(rW,rE,rS,'right')) return MOVE.SCISSORS;
-  // 不出招：双腕下垂
-  if ((lW.v>minVis && lW.y>hipY) || (rW.v>minVis && rW.y>hipY)) return MOVE.PASS;
+  // 闪避（左右闪身）：检测身体中心相对画面水平中线(归一化 x=0.5)的水平偏离
+  // 玩家左右闪身移出初始站位即判定为闪避，与升龙/石头/剪刀（身体居中、仅手臂动）区分
+  // 用肩部中点而非手腕：剪刀前伸时手腕 x 偏移但肩部中点不变，避免误判
+  const bodyX = (lS.x + rS.x) / 2;
+  if (Math.abs(bodyX - 0.5) > sw * DODGE_X_THRESHOLD) return MOVE.DODGE;
   return null;
 }
-function detectLean(lm) {
-  if (!lm) return 0;
-  const lS=lm[KP.L_SHOULDER], rS=lm[KP.R_SHOULDER], nose=lm[KP.NOSE];
-  if (lS.visibility<0.25 || rS.visibility<0.25) return 0;
-  const midX=(lS.x+rS.x)/2;
-  const sw=Math.abs(rS.x-lS.x)||0.1;
-  const nX=(nose && nose.visibility>0.2)?nose.x:midX;
-  const off=(nX-midX)/sw;
-  if (off>0.32) return 1;
-  if (off<-0.32) return -1;
-  return 0;
+
+// 反击挥拳检测：任一手臂挥动超过肩膀高度（手腕明显高于肩且越过鼻线）即视为出拳
+function armSwungOverShoulder(lm) {
+  if (!lm) return false;
+  const minVis = 0.25;
+  const P = i => ({ x:lm[i].x, y:lm[i].y, v:lm[i].visibility });
+  const lS=P(KP.L_SHOULDER), rS=P(KP.R_SHOULDER);
+  if (lS.v<minVis || rS.v<minVis) return false;
+  const nose = lm[KP.NOSE];
+  const noseY = (nose && nose.visibility>0.4) ? nose.y : (lS.y+rS.y)/2 - 0.1;
+  const shoulderY = (lS.y + rS.y) / 2;
+  const lW=P(KP.L_WRIST), rW=P(KP.R_WRIST);
+  const above = w => w.v>minVis && w.y < shoulderY - 0.02 && w.y < noseY - 0.02;
+  return above(lW) || above(rW);
 }
+
 
 // ═══════════════════════════════════════════════════════════
 //  玩家状态
 // ═══════════════════════════════════════════════════════════
 let players = [];
 let activeCount = 0;
+let player = null; // 1v1 PvE：仅玩家 1
 function createPlayerState(index) {
-  const av = createAvatar();
+  const av = createAvatar(index);
+  av.group.visible = false; // 未就位前隐藏
   scene.add(av.group);
-  return { index, active:false, alive:true, inited:false, hp:MAX_HP_PLAYER, combo:[], gesture:null, gestureHoldStart:0, lastConfirm:0, lean:0, leanSmooth:0, lane:0, targetLane:0, laneSmooth:0, defending:false, defendFrames:0, baseX:WORLD_SHIFT_X, attackAnim:null, avatar:av, lm:null, colors:PLAYER_STYLES[index] };
-}
-// 三条轨道的 x 坐标（左=-LANE_STEP, 中=0, 右=+LANE_STEP），整体左移 WORLD_SHIFT_X
-const LANE_X = [-LANE_STEP, 0, LANE_STEP].map(x => x + WORLD_SHIFT_X);
-const LANE_LAYOUT = {
-  1: [0],
-  2: [-LANE_STEP, LANE_STEP],
-  3: [-LANE_STEP, 0, LANE_STEP],
-  4: [-1.5*LANE_STEP, -0.5*LANE_STEP, 0.5*LANE_STEP, 1.5*LANE_STEP],
-};
-const PLAYER_Z = 4; // 玩家在 z=4（脚下区域中部，离摄像机近）
-function layoutPlayers() {
-  // 所有玩家都以轨道组中心为基准，不再用 LANE_LAYOUT 做固定横向分配；
-  // 实际站位由 updatePlayerLaneFromPose() 每帧根据肩膀位置动态决定，确保永远站在某条轨道中心。
-  players.forEach(p => p.baseX = WORLD_SHIFT_X);
+  return { index, active:false, alive:true, inited:false, hp:MAX_HP_PLAYER, move:null, combo:[], gesture:null, gestureHoldStart:0, lastConfirm:0, lastPunch:0, punchKeyed:false, hitFlashT:0, isBoss:false, animState:null, avatar:av, lm:null, colors:PLAYER_STYLES[index] };
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -606,26 +1499,17 @@ function onPoseResults(results) {
 }
 
 function distributePoses(poses) {
-  const n = Math.min(poses.length, MAX_PLAYERS);
+  // 1v1 PvE：只激活玩家 1，八角笼内单一白盒
+  if (!players[0]) players[0] = createPlayerState(0);
+  player = players[0];
+  const has = poses.length > 0;
   for (let i=0;i<MAX_PLAYERS;i++) {
     if (!players[i]) players[i] = createPlayerState(i);
-    players[i].active = i<n;
-    players[i].lm = i<n ? pipeline(poses[i], false) : null;
+    players[i].active = (i===0 && has);
+    players[i].avatar.group.visible = (i===0 && has);
+    players[i].lm = (i===0 && has) ? pipeline(poses[0], false) : null;
   }
-  if (n !== activeCount) { activeCount = n; layoutPlayers(); players.forEach((p,i)=>{ if(i<n) p.inited=true; }); }
-}
-
-// 根据肩中点在画面中的水平位置，把玩家映射到最近的轨道，保证 avatar 永远站在轨道中心
-function updatePlayerLaneFromPose(p) {
-  if (!p || !p.lm || !p.active) return;
-  const lS = p.lm[KP.L_SHOULDER], rS = p.lm[KP.R_SHOULDER];
-  if (!lS || !rS || (lS.visibility<0.2 && rS.visibility<0.2)) return;
-  const shoulderX = (lS.x + rS.x) / 2;
-  const worldX = WORLD_SHIFT_X + (0.5 - shoulderX) * LANE_STEP * 2.2;
-  const lane = Math.round((worldX - WORLD_SHIFT_X) / LANE_STEP);
-  p.targetLane = Math.max(-1, Math.min(1, lane));
-  p.laneSmooth = (p.laneSmooth || 0) + (p.targetLane - (p.laneSmooth || 0)) * 0.18;
-  p.lane = Math.round(p.laneSmooth);
+  if ((has?1:0) !== activeCount) { activeCount = has?1:0; if (has) player.inited = true; }
 }
 
 // 在摄像头预览画面上叠加骨骼连线
@@ -639,7 +1523,8 @@ cameraOverlayCanvas.style.height = '180px';
 cameraOverlayCanvas.style.borderRadius = '10px';
 cameraOverlayCanvas.style.pointerEvents = 'none';
 cameraOverlayCanvas.style.zIndex = '9';
-cameraOverlayCanvas.style.transform = 'scaleX(-1)';
+// 注意：MediaPipe selfieMode=true 时 landmark 已是镜像坐标，与 #camera-video 的 scaleX(-1) 显示一致，
+// 这里不再翻转，否则骨骼会与人物左右反向
 document.body.appendChild(cameraOverlayCanvas);
 const cameraOverlayCtx = cameraOverlayCanvas.getContext('2d');
 
@@ -647,12 +1532,33 @@ function drawPoseOnCamera(landmarks) {
   const ctx = cameraOverlayCtx;
   const w = cameraOverlayCanvas.width, h = cameraOverlayCanvas.height;
   ctx.clearRect(0,0,w,h);
-  if (!landmarks || !landmarks.length) return;
+  // 站位引导框（P2⑨）：人形站位框 + 距离提示
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.setLineDash([5,5]);
+  ctx.strokeRect(w*0.30, h*0.12, w*0.40, h*0.66);
+  ctx.setLineDash([]);
+  if (!landmarks || !landmarks.length) {
+    ctx.fillStyle='#ffd77a'; ctx.font='11px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText('请站在框内，让上半身入镜', w/2, h-14);
+    return;
+  }
   window.drawConnectors(ctx, landmarks, POSE_CONNECTIONS, { color:'#00ff88', lineWidth:3 });
   window.drawLandmarks(ctx, landmarks, { color:'#ff3366', lineWidth:2, radius:5 });
   const upperIdx = [0,11,12,13,14,15,16];
   const pts = upperIdx.filter(i=>landmarks[i]).map(i=>landmarks[i]);
   window.drawLandmarks(ctx, pts, { color:'#ffd166', lineWidth:2, radius:6 });
+  // 距离提示：肩宽归一化过小=太远，过大=太近
+  const lS = landmarks[KP.L_SHOULDER], rS = landmarks[KP.R_SHOULDER];
+  if (lS && rS && lS.visibility>0.3 && rS.visibility>0.3) {
+    const sw = Math.abs(rS.x-lS.x);
+    let msg = null;
+    if (sw < 0.09) msg = '⬆ 请靠近一点';
+    else if (sw > 0.32) msg = '⬇ 请后退一点';
+    if (msg) {
+      ctx.fillStyle='#ffd77a'; ctx.font='11px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(msg, w/2, h-14);
+    }
+  }
 }
 
 async function startPoseCamera() {
@@ -668,54 +1574,43 @@ async function startPoseCamera() {
 }
 
 // 演示模式
-const DEMO = new URLSearchParams(location.search).has('demo');
+let DEMO = new URLSearchParams(location.search).has('demo');
 if (DEMO) poseModelInfo = 'demo / 模拟';
-function demoMoveFor(i, t) {
-  // 每个玩家周期性切换攻击/防御手势
-  const cycle = 4; // 4 秒一个手势循环，足够保持选中
-  const ph = ((t + i*1.3) % cycle) / cycle;
-  if (ph < 0.4) return MOVE.SCISSORS;
-  if (ph < 0.7) return MOVE.DRAGON;
-  return MOVE.STONE;
-}
 function demoPoses() {
   if (!DEMO) return;
-  const t = performance.now()/1000;
-  const n = Math.max(1, activeCount||1);
-  const bases = LANE_LAYOUT[Math.min(4,Math.max(1,n))];
-  const fake = [];
-  for (let i=0;i<n;i++) {
-    const sw=0.14;
-    // 玩家 i 的基础屏幕 X 偏移对应世界 X；LANE_STEP 变大后减小映射系数，避免越界
-    const baseOff = bases[i] / 16;
-    // Boss 阶段每个玩家轮流切换轨道
-    let laneOff = 0;
-    if (phase === PHASE.BOSS_ATTACK) {
-      const lanePhase = ((t + i*1.1) % 6) / 6;
-      laneOff = lanePhase < 0.3 ? 0 : (lanePhase < 0.65 ? 1 : -1);
-    }
-    const midX = 0.5 + baseOff + laneOff*0.045;
-    const m = demoMoveFor(i, t);
-    // Boss 阶段玩家尽量摆防御（石头），让反击/减伤发生
-    const gesture = (phase === PHASE.BOSS_ATTACK && i===0) ? MOVE.STONE : m;
-    const wY = gesture===MOVE.DRAGON?0.28 : gesture===MOVE.SCISSORS?0.42 : gesture===MOVE.STONE?0.5 : 0.62;
-    // 倾斜：鼻子相对肩中点偏移，模拟头部左右摆动（系数需 > detectLean 阈值 0.42 才会触发躲闪）
-    const noseOff = phase===PHASE.BOSS_ATTACK ? laneOff*0.6 : 0;
-    const pt=(x,y,v=1)=>({x:midX+x*sw,y:y,z:0,visibility:v});
-    fake.push([
-      pt(noseOff,0.30),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),
-      pt(-0.5,0.46),pt(0.5,0.46),pt(-0.5,0.56),pt(0.5,0.56),
-      gesture===MOVE.STONE?pt(0.05,0.50):pt(-0.55,wY+0.05),
-      gesture===MOVE.STONE?pt(-0.05,0.50):pt(0.55,wY+0.05),
-    ]);
+  // 单人模拟：SELECT 自动摆克制连招；CHARGE 充能 65% 后"放下手"（模拟完美连招）；EXECUTE 逐段打出 combo
+  let gesture = MOVE.SCISSORS;
+  if (phase === PHASE.SELECT) {
+    gesture = pickCounter(nextBossMove !== undefined ? nextBossMove : MOVE.SCISSORS);
+  } else if (phase === PHASE.CHARGE) {
+    const cur = (player && player.combo[0] !== undefined) ? player.combo[0] : MOVE.SCISSORS;
+    gesture = nowChargeFrac() >= 0.65 ? null : cur;
+  } else if (phase === PHASE.COUNTER) {
+    // 反击窗口：前 70% 保持闪避（左右闪身），70% 时挥拳反击
+    gesture = (performance.now() - phaseStart) / COUNTER_MS >= 0.7 ? MOVE.SCISSORS : MOVE.DODGE;
+  } else if (phase === PHASE.BOSSRETALIATE) {
+    // Boss 防守反击窗口：80% 时做石头防御化解（模拟成功）
+    gesture = (performance.now() - phaseStart) / RETALIATE_MS >= 0.8 ? MOVE.STONE : MOVE.DODGE;
+  } else {
+    gesture = (player && player.combo[execSeg] !== undefined) ? player.combo[execSeg] : MOVE.SCISSORS;
   }
+  // 手腕 y：升龙=头顶之上，不出招=与头(0.30)接近平行
+  const wY = gesture===MOVE.DRAGON?0.18 : gesture===MOVE.SCISSORS?0.42 : gesture===MOVE.STONE?0.5 : 0.25;
+  const sw=0.14, midX=0.5;
+  const pt=(x,y,v=1)=>({x:midX+x*sw,y:y,z:0,visibility:v});
+  const fake = [[
+    pt(0,0.30),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),pt(0,0,0),
+    pt(-0.5,0.46),pt(0.5,0.46),pt(-0.5,0.56),pt(0.5,0.56),
+    gesture===MOVE.STONE?pt(0.05,0.50):pt(-0.55,wY+0.05),
+    gesture===MOVE.STONE?pt(-0.05,0.50):pt(0.55,wY+0.05),
+  ]];
   lastPoses = fake;
   distributePoses(fake);
 }
 
 // 骨骼捕捉调试窗（仅 DEMO 测试版本显示）：火柴人 + 归一化坐标 + lean/distance
 function drawPoseDebug() {
-  const showDebug = DEMO || cameraActive;
+  const showDebug = DEMO || cameraActive || devPoseDebug.checked;
   poseDebugBox.style.display = showDebug ? 'block' : 'none';
   if (demoHint) {
     if (DEMO || cameraActive) demoHint.style.display = 'none';
@@ -734,7 +1629,7 @@ function drawPoseDebug() {
     g === MOVE.SCISSORS ? '✂️ 剪刀·刺' :
     g === MOVE.DRAGON ? '🐉 升龙拳' :
     g === MOVE.STONE ? '🪨 石头·守' :
-    g === MOVE.PASS ? '🚫 不出招' : '— 未识别';
+    g === MOVE.DODGE ? '💨 闪避·躲' : '— 未识别';
 
   const lm = p ? p.lm : null;
   if (!lm || lm[KP.L_SHOULDER].visibility < 0.2) {
@@ -809,312 +1704,1021 @@ let phase = PHASE.WAITING;
 let phaseStart = 0;
 let round = 0;
 let bossHp = MAX_HP_BOSS;
-let bossAttackType = BOSS_ATTACK.MELEE;
-let bossAttackLane = 0;
-let bossAttackResolved = false;
-let prevWarn = false;
 
-const HUD = [0,1,2,3].map(i => {
+const HUD = [0].map(i => {
   const el = document.getElementById(`hud-${i}`);
-  return { el, fill:el.querySelector('.p-hp-fill'), hpText:el.querySelector('.p-hp-text'), status:el.querySelector('.p-status'), combo:el.querySelector('.p-combo') };
+  return { el, fill:el.querySelector('.p-hp-fill'), hpText:el.querySelector('.p-hp-text'), status:el.querySelector('.p-status'), moveCards:[] };
 });
+let bossCardEls = [];
+const MAX_CARDS = 8;
+function initHud() {
+  const h = HUD[0];
+  const wrap = h.el.querySelector('.p-movecards');
+  wrap.innerHTML = '';
+  for (let i=0;i<MAX_CARDS;i++) {
+    const card = document.createElement('span');
+    card.className = 'move-card';
+    card.dataset.state = 'empty';
+    card.innerHTML = '<span class="mc-icon"></span><span class="mc-label">未选</span>';
+    wrap.appendChild(card);
+  }
+  h.moveCards = [...wrap.querySelectorAll('.move-card')];
+  const bw = document.getElementById('boss-cards');
+  bw.innerHTML = '';
+  for (let i=0;i<COMBO_LEN;i++) {
+    const c = document.createElement('span');
+    c.className = 'boss-card empty';
+    c.dataset.mv = 'undefined';
+    bw.appendChild(c);
+  }
+  bossCardEls = [...bw.querySelectorAll('.boss-card')];
+}
+initHud();
+
+let lastAnimSeg = -1;     // 已触发动画标记
+let lastJudgedSeg = -1;   // 已判定标记
+let roundPlayerDmg = 0;   // 本回合玩家对 Boss 造成的总伤害
+let roundBossDmg = 0;     // 本回合 Boss 对玩家造成的总伤害
+let counterResolved = false; // 反击窗口是否已判定
+let counterResult = null;    // 反击结果: 'perfect' | 'hit' | 'fail'
+let counterPunched = false;  // 反击窗口中是否已出拳（演示/钩子用）
+let counterSeg = -1;         // 触发反击的出招段索引（用于反击后继续剩余招式）
+let retaliateResolved = false; // Boss 防守反击窗口是否已判定
+let retaliateBlocked = false;  // 玩家是否成功化解（闪避/石头防御）
+let retaliateSeg = -1;         // 触发 Boss 防守反击的出招段索引（用于反击后继续剩余招式）
+
+// 充能进度 0~1（仅 CHARGE 阶段有效）
+function nowChargeFrac() {
+  if (phase !== PHASE.CHARGE) return 0;
+  return Math.min(1, (performance.now() - chargeStart) / CHARGE_MS);
+}
+
+// 🎬 回合切换全屏公告：文字分割上下两半左右飞入 → 故障艺术停留 → 飞出消散
+const bannerEl = document.getElementById('phase-banner');
+let lastBannerTime = 0;
+let lastBannerKey = '';
+function showBanner(text, theme, key) {
+  if (!bannerEl) return;
+  if (key && key === lastBannerKey && performance.now() - lastBannerTime < 2500) return; // 同回合防抖
+  lastBannerTime = performance.now(); lastBannerKey = key || text;
+  const top = bannerEl.querySelector('.b-top');
+  const bot = bannerEl.querySelector('.b-bot');
+  if (top) top.textContent = text;
+  if (bot) bot.textContent = text;
+  bannerEl.className = 'show ' + (theme || 'blue');
+  clearTimeout(bannerEl._t);
+  bannerEl._t = setTimeout(() => bannerEl.classList.remove('show'), 2700);
+}
 
 function setPhase(p) {
-  phase = p; phaseStart = performance.now(); bossAttackResolved = false;
+  const prevPhase = phase;
+  // 🥊 反击/抢占前摇：进入 PREEMPT/COUNTER/BOSSRETALIATE 时玩家摆出摆拳蓄力姿态，离开时若无出拳动画则恢复待机
+  if (player && player.avatar) {
+    const enteringClash = (p === PHASE.PREEMPT || p === PHASE.COUNTER || p === PHASE.BOSSRETALIATE);
+    const leavingClash = (prevPhase === PHASE.PREEMPT || prevPhase === PHASE.COUNTER || prevPhase === PHASE.BOSSRETALIATE);
+    const animActive = player.animState && player.animState.active;
+    if (enteringClash && !animActive) applyPoseToRig(player.avatar, POSE_SCISSORS.WINDUP);
+    else if (leavingClash && !animActive) applyPoseToRig(player.avatar, POSE_IDLE);
+  }
+  phase = p; phaseStart = performance.now();
+  // 🎬 全屏公告触发：选招=蓝霓虹、战斗=红霓虹、反击/抢占=白闪电
+  if (p === PHASE.SELECT) showBanner(`回合 ${round} · 摆招`, 'blue', 'select'+round);
+  else if (p === PHASE.EXECUTE) showBanner('对　决　！', 'red', 'exec'+round);
+  else if (p === PHASE.COUNTER) { showBanner('反　击！', 'white', 'counter'+round); sfx('zap'); }
+  else if (p === PHASE.PREEMPT) { showBanner('抢占先机！', 'white', 'preempt'+round); sfx('zap'); sfx('chargeStart'); }
+  else if (p === PHASE.BOSSRETALIATE) { showBanner('防　守！', 'white', 'retaliate'+round); sfx('zap'); sfx('chargeStart'); }
   const map = {
     [PHASE.WAITING]:['phase-waiting','⏳ 等待开始'],
-    [PHASE.SELECT]:['phase-select','🎯 选招阶段'],
-    [PHASE.EXECUTE]:['phase-execute','⚔️ 出招阶段'],
-    [PHASE.BOSS_ATTACK]:['phase-boss','👹 Boss 攻击！'],
-    [PHASE.RESOLVE]:['phase-resolve','💥 结算'],
-    [PHASE.ROUND_END]:['phase-roundend','✅ 回合结束'],
+    [PHASE.SELECT]:['phase-select','🎯 摆招（摆满自动确认）'],
+    [PHASE.CHARGE]:['phase-charge','⚡ 充能！满格放下手出拳'],
+    [PHASE.EXECUTE]:['phase-execute','⚔️ 对决中'],
+    [PHASE.COUNTER]:['phase-counter','🥊 反击窗口！'],
+    [PHASE.PREEMPT]:['phase-preempt','⚡ 抢占先机！'],
+    [PHASE.BOSSRETALIATE]:['phase-retaliate','🛡️ 防守窗口！'],
+    [PHASE.RESOLVE]:['phase-resolve','💥 回合结算'],
     [PHASE.GAMEOVER]:['phase-gameover','🏁 游戏结束'],
     [PHASE.VICTORY]:['phase-victory','🏆 胜利！'],
   };
   phaseEl.className = map[p][0]; phaseEl.textContent = map[p][1];
-  if (p === PHASE.BOSS_ATTACK) startBossAttack();
-  if (p === PHASE.VICTORY) setMessage('🏆 胜利！Boss 已被击败\n点击「开始游戏」再战', false);
-  if (p === PHASE.GAMEOVER) setMessage('🏁 全员倒下\n点击「开始游戏」重开', false);
+  if (PHASE_THEMES[p]) applyPhaseTheme(p);
+  if (p === PHASE.VICTORY) {
+    boss.deathT = 0;   // 红方拳手倒地
+    setMessage('🏆 胜利！红方拳手被击倒！\n点击「开始游戏」再战', false);
+    addShake(0.5); triggerFlash(0.3); sfx('win');
+  }
+  if (p === PHASE.GAMEOVER) {
+    if (player) player.alive = false;
+    setMessage('🏁 你被击倒了…\n点击「开始游戏」重试', false);
+    addShake(0.6); triggerFlash(0.25); sfx('lose');
+  }
 }
 
 function startGame() {
   round = 0; bossHp = MAX_HP_BOSS;
-  players.forEach(p => { p.hp=MAX_HP_PLAYER; p.alive=true; p.combo=[]; p.defending=false; p.attackAnim=null; });
+  perfectStreak = 0; comboBuff = false;
+  playerHistory.length = 0;
+  // 兜底创建玩家（无摄像头时也可纯键盘游玩）
+  if (!player) {
+    players[0] = createPlayerState(0);
+    player = players[0];
+    player.active = true;
+    player.inited = true;
+    player.avatar.group.visible = true;
+  }
+  // 重置红方拳手状态
+  boss.deathT = -1; boss.hitFlashT = 0; boss.animState = null;
+  if (boss.avatar) {
+    boss.group.rotation.x = 0; boss.group.rotation.y = Math.PI;
+    boss.group.position.set(0, 0, BOSS_Z);
+    boss.group.traverse(o => { if (o.isMesh) { o.material.transparent = false; o.material.opacity = 1; } });
+    applyBoxerGuard(boss.avatar);
+  }
+  players.forEach(p => { p.hp=MAX_HP_PLAYER; p.alive=true; p.move=null; p.combo=[]; p.gesture=null; p.gestureHoldStart=0; p.lastConfirm=0; p.lastPunch=0; p.hitFlashT=0; p.animState=null; resetAvatarPose(p); });
+  document.getElementById('tutorial-overlay').classList.add('hidden');
+  document.getElementById('calib-overlay').classList.add('hidden');
   updateBossHp();
+  hideCombo();
   startRound();
 }
 function startRound() {
   round++; roundEl.textContent = `回合 ${round}`;
-  players.forEach(p => { p.combo=[]; p.gesture=null; p.gestureHoldStart=0; p.defending=false; p.defendFrames=0; p.attackAnim=null; });
-  lastExecutedSeg = -1;
-  warnGroup.visible = false;
+  players.forEach(p => { p.move=null; p.combo=[]; p.gesture=null; p.gestureHoldStart=0; p.lastConfirm=0; p.lastPunch=0; p.hitFlashT=0; p.animState=null; resetAvatarPose(p); });
+  roundCharged = false; roundPerfect = false;
+  lastAnimSeg = -1; lastJudgedSeg = -1;
+  execSeg = 0; execLen = 0; bossHurtDone = false;
+  counterResolved = false; counterResult = null; counterPunched = false; counterSeg = -1;
+  preemptResolved = false; preemptPunched = false; preemptResult = null; preemptSeg = -1;
+  retaliateResolved = false; retaliateBlocked = false; retaliateSeg = -1;
+  dodgeResolved = false; nextAtkMod = 0; bossNextAtkMod = 0;
+  window.__lastJudge = {};   // playtest 判定记录槽（由闪避分支注入）
+  // ⚔️ 架势条：跨回合累积，攻击结算时消耗
+  bossMoves = bossChooseMoves(round);   // Boss 5 招固定套路
+  nextBossMove = bossMoves[0];
+  execLen = COMBO_LEN;                   // 出招段数 = 5
+  roundPlayerDmg = 0; roundBossDmg = 0;
+  boss.hitFlashT = 0;
   setPhase(PHASE.SELECT);
-  setMessage(`第 ${round} 回合 | 摆出招式构筑组合（每人 ${COMBO_LEN} 招）`, true);
+  setMessage(`第 ${round} 回合 · 连摆 5 招组成连招（🪨✂️🐉💨 可重复），摆满自动确认\n🪨克✂️ · 🐉破🪨 · 💨闪避躲攻击（有架势消耗1格必躲，无架势30%）· 升龙被闪避会遭 Boss 反击（做闪避💨/石头🪨化解）`, true);
 }
-function setMessage(t, small=false) { messageBox.textContent = t; messageBox.className = small?'small':''; }
+function setMessage(t, small=false, center=false) { messageBox.textContent = t; messageBox.className = (small?'small ':'')+(center?'center':''); }
 
 function tryConfirmGesture(p, now) {
-  if (DEMO) {
-    // 演示模式：每 700ms 自动确认一个招式，只选攻击/不出招（选招阶段不选防御）
-    if (p.combo.length < COMBO_LEN && now - p.lastConfirm > 700) {
-      const r = Math.sin(now/400 + p.index*3) > 0 ? MOVE.SCISSORS : MOVE.DRAGON;
-      p.combo.push(r);
-      p.lastConfirm = now;
-      spawnFloat(new THREE.Vector3(WORLD_SHIFT_X + p.laneSmooth*LANE_STEP, 3.2, 12), `${MOVE_ICONS[r]} 已选`, '#ffffff');
-    }
-    return;
-  }
   if (now - p.lastConfirm < RECONFIRM_MS) return;
   if (p.gesture === null) { p.gestureHoldStart = 0; return; }
   if (p.gestureHoldStart === 0) { p.gestureHoldStart = now; return; }
-  if (now - p.gestureHoldStart >= GESTURE_HOLD_MS) {
-    p.combo.push(p.gesture);
+  if (now - p.gestureHoldStart >= SELECT_HOLD_MS) {
+    const mv = p.gesture;
     p.lastConfirm = now; p.gestureHoldStart = 0;
-    spawnFloat(new THREE.Vector3(WORLD_SHIFT_X + p.laneSmooth*LANE_STEP, 3.2, 12), `${MOVE_ICONS[p.gesture]} 已选`, '#ffffff');
+    p.combo.push(mv);
+    showComboConfirm(mv, p.combo.length);
+    sfx('confirm');
+    if (p.combo.length >= COMBO_LEN) onMoveConfirmed();
   }
 }
-function allLocked() {
-  const act = players.filter(p => p.active && p.alive);
-  return act.length>0 && act.every(p => p.combo.length>=COMBO_LEN);
+
+// 选招阶段：连摆 5 招（每招保持 1.5 秒确认，屏幕有进度提示）→ 摆满自动锁定，无时间限制
+function updateSelect(dt, now) {
+  const p = player;
+  if (!p || !p.active || !p.alive) return;
+  if (p.combo.length < COMBO_LEN) {
+    if (DEMO) {
+      // 演示：针对 Boss 固定套路的每一招自动克制
+      if (now - p.lastConfirm > 500) {
+        const bm = bossMoves[p.combo.length] !== undefined ? bossMoves[p.combo.length] : MOVE.SCISSORS;
+        const r = pickCounter(bm);
+        p.combo.push(r); p.lastConfirm = now;
+        showComboConfirm(r, p.combo.length);
+        sfx('confirm');
+        if (p.combo.length >= COMBO_LEN) onMoveConfirmed();
+      }
+    } else {
+      tryConfirmGesture(p, now);
+    }
+  }
 }
-function finishSelect() {
-  players.forEach(p => { if (p.active && p.alive) while (p.combo.length<COMBO_LEN) p.combo.push(MOVE.PASS); });
-  setPhase(PHASE.EXECUTE);
+
+// 出招确认：连招含攻击招 → 充能暴击；纯防御连招 → 直接对决
+function onMoveConfirmed() {
+  const combo = player ? player.combo : [];
+  const hasAtk = combo.some(m => m === MOVE.SCISSORS || m === MOVE.DRAGON);
+  if (hasAtk) {
+    roundCharged = false; roundPerfect = false;
+    chargeStart = performance.now();
+    setPhase(PHASE.CHARGE);
+    setMessage('⚡ 连招已确认！接近满格时放下手臂 = 完美连招（攻击段 +1）', true, true);
+    sfx('chargeStart');
+  } else {
+    setPhase(PHASE.EXECUTE);
+    setMessage('🛡️ 连招已确认！（纯防御连招）开始对决', true, true);
+  }
+}
+
+// 充能阶段：放下手（手势变为非本招）→ 按充能进度判定完美时机
+function updateCharge(dt, now) {
+  if (roundCharged) return;
+  const frac = nowChargeFrac();
+  const p = player;
+  let punched = false;
+  if (DEMO) {
+    if (frac >= 0.65) punched = true;   // 模拟完美出拳
+  } else if (p && p.active && p.alive) {
+    if (p.punchKeyed) { p.punchKeyed = false; punched = true; }
+    else if (p.gesture !== null && !p.combo.includes(p.gesture) && now - p.gestureHoldStart >= 250) punched = true;
+  }
+  if (punched) {
+    roundCharged = true;
+    roundPerfect = frac >= PERFECT_FRAC;
+    if (roundPerfect) {
+      perfectStreak++;
+      if (perfectStreak >= COMBO_TRIGGER) comboBuff = true;
+      showCombo(perfectStreak);
+      sfx('perfect');
+      spawnFloat(new THREE.Vector3(0, 3.2, PLAYER_Z), '💥 完美！+1', '#ffd84d');
+      triggerFlash(0.2); addShake(0.25);
+      spawnBurst(new THREE.Vector3(0, 3.0, PLAYER_Z+0.4), 0xffd84d, 18, 4);
+    } else {
+      perfectStreak = 0; comboBuff = false; hideCombo();
+      sfx('punch');
+      spawnFloat(new THREE.Vector3(0, 3.1, PLAYER_Z), '👊 出拳', '#ffffff');
+    }
+    setPhase(PHASE.EXECUTE);
+    return;
+  }
+  if (frac >= 1) {
+    roundCharged = true; roundPerfect = false;
+    perfectStreak = 0; comboBuff = false; hideCombo();
+    setPhase(PHASE.EXECUTE);
+  }
 }
 
 function updateExecute(dt, now) {
   const el = now - phaseStart;
-  const segDur = EXECUTE_MS/COMBO_LEN;
-  const seg = Math.min(COMBO_LEN-1, Math.floor(el/segDur));
-  const segT = (el%segDur)/segDur;
-  // 出招动画
-  players.forEach(p => {
-    if (!p.active || !p.alive) return;
-    const mv = p.combo[seg];
-    p.defending = false;
-    // 简单出招动画：若已播放过当前段则设攻击动画
-    if (!p.attackAnim || p.attackAnim.seg !== seg) {
-      p.attackAnim = { seg, move:mv, t:0 };
+  const combo = player && player.combo ? player.combo : [];
+  const len = Math.max(1, combo.length);
+  execLen = len;
+  const segMs = SLOT_MS;
+  if (lastAnimSeg === -1) {
+    lastAnimSeg = 0; execSeg = 0;
+    const bMove = bossMoves[0];
+    nextBossMove = bMove;
+    if (player && combo[0] !== undefined && combo[0] !== MOVE.DODGE) playMove(player, MOVE_KEYS[combo[0]]);
+    if (bMove !== undefined && bMove !== MOVE.DODGE) playMove(boss, MOVE_KEYS[bMove]);
+  }
+  // 逐段推进：段 i 开始时播放对应招式动画（玩家 + Boss 同步演示）
+  const i = Math.floor(el / segMs);
+  if (i < len && i > lastAnimSeg) {
+    lastAnimSeg = i; execSeg = i;
+    const bm = bossMoves[i];
+    nextBossMove = bm;
+    if (combo[i] !== undefined && combo[i] !== MOVE.DODGE) playMove(player, MOVE_KEYS[combo[i]]);
+    if (bm !== undefined && bm !== MOVE.DODGE) playMove(boss, MOVE_KEYS[bm]);
+  }
+  // 逐段结算：段开始后 35% 判定该段
+  for (let s = lastJudgedSeg + 1; s < len; s++) {
+    if (el >= s*segMs + segMs*0.35) {
+      lastJudgedSeg = s; execSeg = s;
+      judgeSegment(s);
+      if (phase !== PHASE.EXECUTE) return; // 段内已切 COUNTER/VICTORY/GAMEOVER
+    } else break;
+  }
+  if (el >= segMs*len && phase === PHASE.EXECUTE) {
+    setMessage(`💥 本回合连招：你造成 ${roundPlayerDmg} 伤害 · 受到 ${roundBossDmg} 伤害${roundPerfect?' · 完美连招':''}`, true);
+    setPhase(PHASE.RESOLVE);
+  }
+}
+
+// 逐段判定：combo[seg] 对 Boss 招（数据驱动 JUDGE_TABLE + 完美连招加成 + 连击翻倍）
+// Boss 一回合最多对玩家造成 1 次伤害；玩家连招每段独立结算对 Boss 伤害
+function judgeSegment(seg) {
+  if (!player) return;
+  const combo = player.combo || [];
+  const pMove = combo[seg];
+  const bMove = bossMoves[seg] !== undefined ? bossMoves[seg] : nextBossMove;
+  if (pMove === undefined || bMove === undefined) return;
+  // 🥊 独立反击系统：本段闪避躲开 Boss 升龙 → 不直接结算伤害，
+  // 进入反击窗口（圆环由中心向四周扩散填充），挥拳时机决定反击伤害
+  // ⚡ 慢动作抢占先机：剪刀 vs 剪刀对拼 → 进入慢动作蓝→金圆环窗口，填满前出拳 = 抢占 2 伤害
+  if (pMove === MOVE.SCISSORS && bMove === MOVE.SCISSORS) {
+    playerHistory.push(pMove);
+    preemptResolved = false; preemptPunched = false; preemptResult = null;
+    preemptSeg = seg;
+    if (player) player.gestureHoldStart = 0;
+    setPhase(PHASE.PREEMPT);
+    setMessage('⚡ 剪刀对拼！抢占先机：蓝金圆环填满前出拳 = 2 点伤害！', true);
+    sfx('chargeStart');
+    return;
+  }
+  const playerPos = new THREE.Vector3(0, 2.6, PLAYER_Z);
+  const bossPos = new THREE.Vector3(0, 2.6, BOSS_Z);
+  const midPos = new THREE.Vector3(0, 2.4, (PLAYER_Z + BOSS_Z)/2);
+  const j = JUDGE_TABLE[pMove][bMove];   // 数据驱动判定表（闪避特殊分支在下方提前 return）
+  let end = false;
+  const applyPlayerDmg = (dmg, color) => {
+    if (dmg <= 0) return;
+    if (CHEAT.god) { spawnFloat(playerPos, '🛡️ 无敌', '#4ec9ff'); return; }
+    if (bossHurtDone) return;   // Boss 一回合只结算一次对玩家伤害
+    bossHurtDone = true;
+    let real = dmg;
+    // ⚔️ Boss 架势条：Boss 攻击招（剪刀/升龙）打中时消耗全部架势，每格 +1 伤害
+    if (bMove === MOVE.SCISSORS || bMove === MOVE.DRAGON) {
+      real += bossCharge;
+      bossCharge = 0;
+    }
+    // 💨 Boss 闪避联动：Boss 闪避成功 +1 / 失败 -1，本段攻击结算后消耗
+    real += bossNextAtkMod;
+    bossNextAtkMod = 0;
+    player.hp = Math.max(0, player.hp - real);
+    roundBossDmg += real;
+    player.hitFlashT = 0.25;
+    spawnFloat(playerPos, `-${real}`, color);
+    updatePlayerHp(player);
+    sfx('hurt');
+    if (player.hp <= 0) end = true;
+  };
+  const applyBossDmg = (dmg, color) => {
+    if (dmg <= 0) return;
+    let real = dmg;
+    if (roundPerfect) real += 1;            // 完美连招：每段攻击 +1
+    if (comboBuff) real *= COMBO_MULT;      // 连击伤害翻倍
+    if (CHEAT.oneShot) real = MAX_HP_BOSS;  // 一击必杀
+    // ⚔️ 架势条：攻击招（剪刀/升龙）结算时消耗全部架势条，每格 +1 伤害
+    if (pMove === MOVE.SCISSORS || pMove === MOVE.DRAGON) {
+      real += playerCharge;
+      playerCharge = 0;
+    }
+    // 💨 闪避联动修正：闪避成功 +1 / 失败 -1，本段攻击结算后消耗
+    real += nextAtkMod;
+    nextAtkMod = 0;
+    bossHp = Math.max(0, bossHp - real);
+    roundPlayerDmg += real;
+    boss.hitFlashT = 0.25;
+    spawnFloat(bossPos, `-${real}`, color);
+    updateBossHp();
+    sfx(pMove===MOVE.DRAGON?'flame':'hit');
+    if (bossHp <= 0) end = true;
+  };
+  // 💨 闪避 vs 升龙 判定（统一对称闪避）：闪避躲 Boss 升龙 → 成功进反击窗口，失败受升龙伤害
+  // 规则：有架势 → 消耗 1 架势，100% 成功；无架势 → 30%；闪避不增长架势；失败受伤害 + 下回合攻击 -1
+  if (pMove === MOVE.DODGE && bMove === MOVE.DRAGON) {
+    playerHistory.push(pMove);
+    const rate = playerCharge >= 1 ? 1 : 0.3;
+    if (Math.random() < rate) {
+      // 闪避成功：有架势则消耗 1 架势换保命，下回合攻击 +1，进入反击窗口
+      let consumed = false;
+      if (playerCharge >= 1) { playerCharge -= 1; consumed = true; }
+      nextAtkMod = 1;
+      spawnFloat(playerPos, consumed ? '💨 完美闪避！消耗1架势' : '💨 完美闪避！', consumed ? '#ffd84d' : '#69f0ae');
+      spawnBurst(playerPos, 0x69f0ae, 18, 4);
+      sfx('perfect');
+      counterResolved = false; counterResult = null; counterPunched = false;
+      counterSeg = seg;               // 记录触发反击的段，反击后继续剩余招式
+      if (player) player.gestureHoldStart = 0; // 重置手势计时，避免反击挥拳瞬间判定
+      spawnGhostTrail();              // 💨 闪避方残影闪现，迅速冲向升龙方
+      setPhase(PHASE.COUNTER);
+      setMessage('💨 闪避躲开 Boss 升龙！看准扩散圆环，填满瞬间挥拳反击！', true);
+      sfx('chargeStart'); sfx('zap');
+      if (window.__lastJudge) window.__lastJudge = { scene: 'pDodgeDragon', success: true, pHp: player.hp, pCharge: playerCharge, pMod: nextAtkMod };
     } else {
-      p.attackAnim.t += dt;
+      // 闪避失败：受升龙伤害 + 下回合攻击 -1
+      applyPlayerDmg(DMG_DRAGON, '#ff6b6b');
+      nextAtkMod = -1;
+      addShake(0.5);
+      spawnFloat(playerPos, '闪避失败…', '#ff6b6b');
+      if (end) { if (bossHp <= 0) setPhase(PHASE.VICTORY); else setPhase(PHASE.GAMEOVER); }
+      if (window.__lastJudge) window.__lastJudge = { scene: 'pDodgeDragon', success: false, pHp: player.hp, pCharge: playerCharge, pMod: nextAtkMod };
     }
-  });
-  // 逐段结算伤害（每段开始时结算一次）
-  const segStart = Math.floor((now-phaseStart)/segDur);
-  // 用 marker 防止重复结算
-  if (segStart !== lastExecutedSeg) {
-    lastExecutedSeg = segStart;
-    if (segStart < COMBO_LEN) {
-      players.forEach(p => {
-        if (!p.active || !p.alive) return;
-        const mv = p.combo[segStart];
-        if (MOVES[mv].type === 'attack') {
-          let dmg = MOVES[mv].damage;
-          // 连击增伤：同回合上一段也是攻击，则本段 +1 伤害
-          if (segStart > 0 && MOVES[p.combo[segStart-1]].type === 'attack') dmg += 1;
-          bossHp = Math.max(0, bossHp - dmg);
-          const label = dmg === MOVES[mv].damage ? `-${dmg}` : `连击 -${dmg}`;
-          spawnFloat(new THREE.Vector3(0, 24, 32), label, '#ff6b6b');
-          updateBossHp();
-        }
-      });
-      if (bossHp <= 0) { setPhase(PHASE.VICTORY); return; }
+    return;
+  }
+  // 🐉 玩家升龙 vs Boss 闪避（对称防守反击）：Boss 有架势必躲（消耗1格）→ Boss 防守反击；无架势→30%躲开并反击；未躲开→玩家升龙命中 Boss
+  // 规则：Boss 躲开（升龙挥空）→ 慢动作 + Boss 冲向玩家，玩家须做闪避💨/石头🪨防御化解，否则受 RETALIATE_DMG 伤害
+  if (pMove === MOVE.DRAGON && bMove === MOVE.DODGE) {
+    playerHistory.push(pMove);
+    const rate = bossCharge >= 1 ? 1 : 0.3;
+    if (Math.random() < rate) {
+      // Boss 成功闪避躲开玩家升龙 → 升龙挥空，Boss 防守反击
+      if (bossCharge >= 1) bossCharge -= 1;   // 有架势则消耗 1 格换 100% 躲开
+      spawnFloat(bossPos, '💨 Boss 闪避！', '#8b5cf6');
+      spawnFloat(playerPos, '🐉 升龙挥空…', '#ffd84d');
+      spawnBurst(bossPos, 0x8b5cf6, 18, 4);
+      sfx('perfect');
+      retaliateResolved = false; retaliateBlocked = false;
+      retaliateSeg = seg;               // 记录触发 Boss 反击的段，反击后继续剩余招式
+      if (player) player.gestureHoldStart = 0; // 重置手势计时，避免化解瞬间误判
+      spawnGhostTrailFor('boss');       // 💥 Boss 残影冲向玩家
+      setPhase(PHASE.BOSSRETALIATE);
+      setMessage('🐉 升龙被 Boss 闪避躲开！Boss 反守为攻——看准时机做闪避💨 或石头🪨防御化解！', true);
+      sfx('chargeStart'); sfx('zap');
+      if (window.__lastJudge) window.__lastJudge = { scene: 'pDragonWhiff', dodged: true, bCharge: bossCharge, pHp: player.hp };
+    } else {
+      // Boss 未躲开 → 玩家升龙命中 Boss
+      applyBossDmg(DMG_DRAGON, '#ffd84d');
+      sfx('flame');
+      if (end) { if (bossHp <= 0) setPhase(PHASE.VICTORY); else setPhase(PHASE.GAMEOVER); }
+      if (window.__lastJudge) window.__lastJudge = { scene: 'pDragonWhiff', dodged: false, bHp: bossHp, bCharge: bossCharge };
     }
+    return;
   }
-  if (el >= EXECUTE_MS) setPhase(PHASE.BOSS_ATTACK);
-}
-let lastExecutedSeg = -1;
-
-function startBossAttack() {
-  bossAttackType = Math.random() < 0.5 ? BOSS_ATTACK.MELEE : BOSS_ATTACK.RANGED;
-  bossAttackLane = Math.floor(Math.random()*3)-1;
-  prevWarn = false;
-  // 控制各子组件显隐：近战只显示矩形+感叹号；远程只显示红圈+脉冲+弹道
-  warnRect.visible = exMark.visible = bossAttackType === BOSS_ATTACK.MELEE;
-  rangeRing.visible = pulseRing.visible = beamLine.visible = bossAttackType === BOSS_ATTACK.RANGED;
-  warnGroup.visible = false;
-  setMessage(bossAttackType===BOSS_ATTACK.MELEE ? '👹 近身挥击！摆「石头」防御 或 倾斜躲闪' : '👹 远程吐弹！倾斜躲闪（或石头减伤）', true);
-}
-
-function updateBossAttack(dt, now) {
-  const el = now - phaseStart;
-  const t = el / BOSS_WARN_MS;
-  // 每玩家锁定其姿态（防御/倾斜）
-  players.forEach(p => {
-    if (!p.active || !p.alive) return;
-    const lm = p.lm;
-    if (lm) {
-      const g = classifyGesture(lm);
-      // 防御需在 Boss 阶段保持石头
-      const isGuard = g === MOVE.STONE;
-      if (isGuard) { p.defending = true; p.defendFrames++; }
-      else { p.defending = false; p.defendFrames = 0; }
-      // Boss 阶段同时根据头部/肩部偏移做最终 lean 修正，与位置检测叠加但允许小幅摆头躲闪
-      const headLean = detectLean(lm);
-      p.lean = headLean;
-    }
-    p.leanSmooth += (p.lean - p.leanSmooth)*Math.min(1, dt*6);
-    // lane 取位置检测的目标 lane + 头部躲闪修正
-    const headLaneOffset = Math.round(p.leanSmooth);
-    p.lane = Math.max(-1, Math.min(1, (p.targetLane || 0) + headLaneOffset));
-  });
-
-  // 预警可视化
-  warnGroup.visible = true;
-  // 攻击落点 = bossAttackLane 轨道的 x 坐标（基于 LANE_X）
-  const targetLaneX = LANE_X[bossAttackLane + 1]; // lane -1/0/1 → 0/1/2
-  if (bossAttackType === BOSS_ATTACK.MELEE) {
-    const flash = Math.floor(el/350)%2===0;
-    warnRect.material.color.setHex(flash?0xff3030:0xffee00);
-    exMark.material.opacity = flash?1:0.3;
-    // 近战预警：放在 Boss 与玩家之间的空中（z≈20）
-    warnGroup.position.set(targetLaneX, 10, 20);
-    warnRect.rotation.set(0, Math.PI, 0);
-    exMark.position.set(0, 0, 0.1);
-    warnRect.scale.set(1.4, 1.4, 1);
-  } else {
-    // 远程：红圈 + 黄色脉冲 + 弹道线，落点在命中轨道上玩家脚下（z=4）
-    const p = Math.min(1, el/BOSS_WARN_MS);
-    const pr = 2.2 + p*0.6;
-    rangeRing.scale.set(pr, pr, 1);
-    pulseRing.scale.set(pr*(1+0.4*Math.sin(el/120)), pr*(1+0.4*Math.sin(el/120)), 1);
-    pulseRing.material.opacity = 0.5+0.45*Math.sin(el/120);
-    warnGroup.position.set(targetLaneX, 0.3, PLAYER_Z);
-    // 弹道线：从 Boss 头到玩家脚下
-    const p0 = new THREE.Vector3(0, 22, 30);  // Boss 头位置
-    const p1 = new THREE.Vector3(targetLaneX, 1.0, PLAYER_Z);
-    beamGeo.setFromPoints([p0, p1]);
-  }
-
-  if (el >= BOSS_WARN_MS) {
-    resolveBossAttack();
-  }
-}
-
-function resolveBossAttack() {
-  warnGroup.visible = false;
-  const targetLaneX = LANE_X[bossAttackLane + 1];
-  // 判定半径与预警可视化完全一致：近战=矩形半宽，远程=红圈外半径
-  const radius = bossAttackType === BOSS_ATTACK.MELEE ? MELEE_RADIUS : RANGED_RADIUS;
-  // 对每个存活玩家判定
-  players.forEach(p => {
-    if (!p.active || !p.alive) return;
-    const playerX = WORLD_SHIFT_X + p.lane * LANE_STEP;
-    // 几何判定：玩家是否位于预警圈/框内（圈外完全不受伤害）
-    const inZone = Math.abs(playerX - targetLaneX) <= radius;
-    const defended = p.defendFrames >= DEFEND_MIN_FRAMES;
-    let dmg = 0; let guarded = false; let countered = false;
-    if (inZone) {
-      if (bossAttackType === BOSS_ATTACK.MELEE) {
-        // 近战：防御 → 反弹伤害给 Boss，玩家不受伤
-        if (defended) { countered = true; }
-        else { dmg = BOSS_MELEE_DMG; }
+  // 💨 闪避 vs 剪刀 判定（统一对称闪避）：玩家闪避或 Boss 闪避都走这里
+  // 规则：闪避方可躲一切攻击；有架势 → 消耗 1 架势，100% 成功；无架势 → 30%；闪避不增长架势；失败受伤害+下回合攻击-1
+  if ((pMove === MOVE.DODGE && bMove === MOVE.SCISSORS) || (pMove === MOVE.SCISSORS && bMove === MOVE.DODGE)) {
+    const playerDodges = pMove === MOVE.DODGE;
+    if (playerDodges) {
+      // 玩家闪避躲 Boss 剪刀
+      const rate = playerCharge >= 1 ? 1 : 0.3;
+      if (Math.random() < rate) {
+        let consumed = false;
+        if (playerCharge >= 1) { playerCharge -= 1; consumed = true; }   // 有架势：消耗 1 架势换保命
+        nextAtkMod = 1;   // 成功：免疫伤害 + 下回合攻击 +1
+        spawnFloat(playerPos, consumed ? '💨 完美闪避！消耗1架势' : '💨 完美闪避！', consumed ? '#ffd84d' : '#69f0ae');
+        spawnBurst(playerPos, 0x69f0ae, 18, 4);
+        sfx('perfect');
+        if (window.__lastJudge) window.__lastJudge = { scene: 'pDodgeScissor', success: true, pHp: player.hp, pCharge: playerCharge, pMod: nextAtkMod };
       } else {
-        // 远程：命中即掉血，不可反击；防御只能减伤
-        if (defended) { dmg = BOSS_RANGED_GUARDED; guarded = true; }
-        else { dmg = BOSS_RANGED_DMG; }
+        applyPlayerDmg(DMG_SCISSORS, '#ff6b6b');  // 失败：受剪刀伤害
+        nextAtkMod = -1;  // 下回合攻击 -1
+        addShake(0.4);
+        spawnFloat(playerPos, '闪避失败…', '#ff6b6b');
+        if (window.__lastJudge) window.__lastJudge = { scene: 'pDodgeScissor', success: false, pHp: player.hp, pCharge: playerCharge, pMod: nextAtkMod };
+      }
+    } else {
+      // Boss 闪避躲玩家剪刀（对称）
+      const rate = bossCharge >= 1 ? 1 : 0.3;
+      if (Math.random() < rate) {
+        let consumed = false;
+        if (bossCharge >= 1) { bossCharge -= 1; consumed = true; } // 有架势：消耗 1 架势换保命
+        bossNextAtkMod = 1;                          // Boss 下回合攻击 +1
+        spawnFloat(midPos, consumed ? 'Boss 完美闪避！消耗1架势' : 'Boss 完美闪避！', consumed ? '#ffd84d' : '#8b5cf6');
+        spawnBurst(bossPos, 0x8b5cf6, 18, 4);
+        sfx('perfect');
+        if (window.__lastJudge) window.__lastJudge = { scene: 'bDodgeScissor', success: true, bHp: bossHp, bCharge: bossCharge, bMod: bossNextAtkMod };
+      } else {
+        applyBossDmg(DMG_SCISSORS, '#ffc107');       // 失败：受玩家剪刀伤害
+        bossNextAtkMod = -1;                         // Boss 下回合攻击 -1
+        spawnFloat(midPos, 'Boss 闪避失败！', '#ff6b6b');
+        if (window.__lastJudge) window.__lastJudge = { scene: 'bDodgeScissor', success: false, bHp: bossHp, bCharge: bossCharge, bMod: bossNextAtkMod };
       }
     }
-    const v = new THREE.Vector3(playerX, 2.2, PLAYER_Z);
-    if (dmg > 0) {
-      p.hp = Math.max(0, p.hp - dmg);
-      spawnFloat(v, `-${dmg}`, guarded?'#69f0ae':'#ff6b6b');
-    } else if (countered) {
-      bossHp = Math.max(0, bossHp - COUNTER_DMG);
-      spawnFloat(v, `反击! -${COUNTER_DMG}`, '#ffc107');
-      spawnFloat(new THREE.Vector3(0, 24, 32), `-${COUNTER_DMG}`, '#ffc107');
-      updateBossHp();
-    } else if (inZone && defended) {
-      // 远程防御减伤已通过 dmg 分支处理；此处仅兜底显示
-      spawnFloat(v, '挡住', '#4ec9ff');
+    dodgeResolved = true;
+    playerHistory.push(pMove);
+    if (end) {
+      if (bossHp <= 0) setPhase(PHASE.VICTORY);
+      else setPhase(PHASE.GAMEOVER);
     }
-    updatePlayerHp(p);
-  });
-  bossAttackResolved = true;
-  // 检查胜利 / 全灭
-  if (bossHp <= 0) { setPhase(PHASE.VICTORY); return; }
-  const alive = players.filter(p=>p.active&&p.alive);
-  if (alive.length===0) { setPhase(PHASE.GAMEOVER); return; }
-  setPhase(PHASE.RESOLVE);
+    return;
+  }
+  switch (j.result) {
+    case JUDGE_RESULT.BOTH_HIT:
+      applyPlayerDmg(j.dmgP, '#ff6b6b');
+      applyBossDmg(j.dmgB, '#ffc107');
+      spawnBurst(midPos, 0xffd84d, 26, 5); spawnSpeedLines(playerPos, bossPos); addShake(0.5); triggerFlash(0.32);
+      spawnFloat(midPos, j.label, '#ffd84d');
+      break;
+    case JUDGE_RESULT.PLAYER_WIN:
+      applyBossDmg(j.dmgB, '#ffc107');
+      // ⚔️ 玩家架势条累积：玩家石头成功防御 Boss 剪刀（克制成功）→ 玩家架势 +1（上限 CHARGE_MAX）
+      if (pMove === MOVE.STONE && bMove === MOVE.SCISSORS && playerCharge < CHARGE_MAX) {
+        playerCharge += 1;
+        pulseCharge();
+        spawnFloat(midPos, `⚔️ 玩家架势条 +1 (${playerCharge})`, '#ffd84d');
+        sfx('perfect');
+      }
+      spawnBurst(bossPos, pMove===MOVE.DRAGON ? 0xff7733 : 0xffd84d, 22, 5); spawnSpeedLines(playerPos, bossPos); addShake(0.4); triggerFlash(0.3);
+      if (pMove === MOVE.DRAGON) spawnBurst(bossPos, 0xffaa00, 20, 6, 2.4);   // 升龙火焰拖尾
+      spawnFloat(bossPos, j.label, '#ffd84d');
+      break;
+    case JUDGE_RESULT.BOSS_WIN:
+      applyPlayerDmg(j.dmgP, '#ff6b6b');
+      spawnBurst(playerPos, 0xff5533, 20, 4.5); spawnSpeedLines(bossPos, playerPos); addShake(0.55); triggerFlash(0.34);
+      spawnFloat(playerPos, j.label, '#ff6b6b');
+      break;
+    case JUDGE_RESULT.PLAYER_STUN:
+      applyPlayerDmg(j.dmgP, '#8b5cf6');
+      // ⚔️ Boss 架势条累积：Boss 石头成功防御玩家剪刀（克制成功）→ Boss 架势 +1（上限 CHARGE_MAX）
+      if (pMove === MOVE.SCISSORS && bMove === MOVE.STONE && bossCharge < CHARGE_MAX) {
+        bossCharge += 1;
+        pulseBossCharge();
+        spawnFloat(midPos, `🔴 Boss 架势条 +1 (${bossCharge})`, '#ff6b6b');
+        sfx('perfect');
+      }
+      spawnFloat(playerPos, j.label, '#8b5cf6');
+      break;
+    case JUDGE_RESULT.BOSS_STUN:
+      applyBossDmg(j.dmgB, '#8b5cf6');
+      spawnFloat(bossPos, j.label, '#8b5cf6');
+      break;
+    default: // NEUTRAL
+      spawnFloat(midPos, j.label, '#4ec9ff');
+      break;
+  }
+  playerHistory.push(pMove);
+  if (end) {
+    if (bossHp <= 0) setPhase(PHASE.VICTORY);
+    else setPhase(PHASE.GAMEOVER);
+  }
+}
+
+// 🥊 反击窗口伤害结算（独立于常规判定，不吃完美出拳/连击加成）
+function applyCounterDmg(dmg, perfect) {
+  const bossPos = new THREE.Vector3(0, 2.6, BOSS_Z);
+  const playerPos = new THREE.Vector3(0, 2.6, PLAYER_Z);
+  if (dmg <= 0) return;
+  let real = dmg;
+  if (CHEAT.oneShot) real = MAX_HP_BOSS;   // 一击必杀
+  bossHp = Math.max(0, bossHp - real);
+  roundPlayerDmg += real;
+  boss.hitFlashT = 0.25;
+  spawnFloat(bossPos, `-${real}`, perfect ? '#ffd84d' : '#ffc107');
+  updateBossHp();
+  sfx('flame');
+  spawnBurst(bossPos, perfect ? 0xffd84d : 0xff7733, 24, 5);
+  spawnSpeedLines(playerPos, bossPos);
+  addShake(0.4); triggerFlash(0.3);
+  spawnFloat(bossPos, perfect ? '💥 完美反击！' : '🥊 反击命中！', perfect ? '#ffd84d' : '#ffc107');
+  if (perfect) spawnBurst(bossPos, 0xffaa00, 20, 6, 2.4);
+}
+
+// Boss 升龙挥空后的反击窗口：
+// 圆环由中心向四周扩散填充（COUNTER_MS 填满）。
+// 1) 填满前出拳 → 反击成功，Boss -1 格
+// 2) 恰好填满（±COUNTER_PERFECT_MS）→ 完美反击，Boss -2 格
+// 3) 超时无出拳 → 反击失败，双方不受伤害
+function updateCounter(dt, now) {
+  // 使用真实时钟（performance.now），与 phaseStart 同源，避免 rAF 时间戳漂移影响 ±50ms 完美判定
+  const el = performance.now() - phaseStart;
+  const frac = Math.min(1, el / COUNTER_MS);
+  // 心跳节奏：判定窗口内每 0.8s 一次，营造紧张感
+  if (!counterResolved && Math.floor(el / 800) !== Math.floor((el - 40) / 800)) sfx('heartbeat');
+  if (!counterResolved) {
+    let punched = false;
+    if (DEMO) {
+      if (frac >= 0.7 && !counterPunched) { punched = true; counterPunched = true; }
+    } else if (player && player.active && player.alive) {
+      if (player.punchKeyed) { player.punchKeyed = false; punched = true; }
+      else if (armSwungOverShoulder(player.lm)) {
+        // 反击挥拳：手臂挥动超过肩膀高度即判定出拳、反击成功
+        punched = true;
+      } else {
+        player.gestureHoldStart = 0;
+      }
+    }
+    if (punched) {
+      if (player) playMove(player, MOVE_KEYS[MOVE.SCISSORS]); // 反击出拳（刺拳动画）
+      counterResolved = true;
+      const diff = el - COUNTER_MS;
+      if (Math.abs(diff) <= COUNTER_PERFECT_MS) {
+        counterResult = 'perfect';
+        applyCounterDmg(2, true);
+        setMessage('💥 完美反击！Boss 受到 2 点伤害！', true);
+      } else if (el < COUNTER_MS) {
+        counterResult = 'hit';
+        applyCounterDmg(1, false);
+        setMessage('👊 反击成功！Boss 受到 1 点伤害！', true);
+      } else {
+        counterResult = 'fail'; // 出拳太迟，窗口已关闭
+        setMessage('💨 出拳太迟… 反击失败，双方都不受伤害', true);
+      }
+    } else if (el >= COUNTER_MS + COUNTER_PERFECT_MS) {
+      counterResolved = true;
+      counterResult = 'fail';
+      setMessage('💨 反击窗口关闭… 反击失败，双方都不受伤害', true);
+    }
+  } else if (el >= COUNTER_MS + 1000) {
+    if (bossHp <= 0) { setPhase(PHASE.VICTORY); return; }
+    if (player && player.hp <= 0) { setPhase(PHASE.GAMEOVER); return; }
+    // 🥊 反击结束后：若还有剩余招式，继续逐段结算；否则进入结算
+    const len = player && player.combo ? player.combo.length : 0;
+    if (counterSeg + 1 < len) {
+      lastAnimSeg = counterSeg;   // 已播放动画段（反击段已播）
+      execSeg = counterSeg + 1;
+      setPhase(PHASE.EXECUTE);    // setPhase 会重置 phaseStart，从剩余段继续
+      return;
+    }
+    setPhase(PHASE.RESOLVE);
+  }
+}
+
+// ⚡ 抢占先机伤害结算（独立于常规判定与反击）
+function applyPreemptDmg(dmg) {
+  const bossPos = new THREE.Vector3(0, 2.6, BOSS_Z);
+  const playerPos = new THREE.Vector3(0, 2.6, PLAYER_Z);
+  let real = dmg;
+  if (CHEAT.oneShot) real = MAX_HP_BOSS;
+  bossHp = Math.max(0, bossHp - real);
+  roundPlayerDmg += real;
+  boss.hitFlashT = 0.25;
+  spawnFloat(bossPos, `-${real}`, '#4ec9ff');
+  updateBossHp();
+  sfx('flame');
+  spawnBurst(bossPos, 0x4ec9ff, 26, 5);
+  spawnSpeedLines(playerPos, bossPos);
+  addShake(0.4); triggerFlash(0.3);
+  spawnFloat(bossPos, '⚡ 抢占先机！', '#4ec9ff');
+}
+
+// 💥 抢占先机失败惩罚：Boss 出拳命中玩家（与成功对称，扣 2 点伤害 + 红色震动演出）
+function applyPreemptFailDmg(dmg) {
+  if (!player || !player.alive) return;
+  const bossPos = new THREE.Vector3(0, 2.6, CLASH_Z_BOSS);
+  const playerPos = new THREE.Vector3(0, 2.6, CLASH_Z_PLAYER);
+  let real = dmg;
+  player.hp = Math.max(0, player.hp - real);
+  roundBossDmg += real;
+  player.hitFlashT = 0.25;
+  if (player.hp <= 0) player.alive = false;
+  spawnFloat(playerPos, `-${real}`, '#ff6b6b');
+  updatePlayerHp(player);
+  sfx('hurt');
+  spawnBurst(playerPos, 0xff6b6b, 30, 5);
+  spawnSpeedLines(bossPos, playerPos);
+  addShake(0.6); triggerFlash(0.4);
+  // Boss 出拳命中演出
+  if (boss && boss.animState) playMove(boss, MOVE_KEYS[MOVE.SCISSORS]);
+  spawnFloat(playerPos, '💥 Boss 反击！', '#ff6b6b');
+}
+
+// ⚡ 剪刀 vs 剪刀的慢动作抢占窗口：
+// 圆环从外向内蓝→金填充（PREEMPT_MS 填满），填满前出拳 = 抢占成功 Boss -2 格；超时则失败
+function updatePreempt(dt, now) {
+  const el = performance.now() - phaseStart;
+  const frac = Math.min(1, el / PREEMPT_MS);
+  // 心跳节奏：判定窗口内每 0.8s 一次，营造紧张感
+  if (!preemptResolved && Math.floor(el / 800) !== Math.floor((el - 40) / 800)) sfx('heartbeat');
+  if (!preemptResolved) {
+    let punched = false;
+    if (DEMO) {
+      if (frac >= 0.6 && !preemptPunched) { punched = true; preemptPunched = true; }
+    } else if (player && player.active && player.alive) {
+      if (player.punchKeyed) { player.punchKeyed = false; punched = true; }
+      else if (armSwungOverShoulder(player.lm)) punched = true;
+      else player.gestureHoldStart = 0;
+    }
+    if (punched) {
+      if (player) playMove(player, MOVE_KEYS[MOVE.SCISSORS]); // 抢占出拳（刺拳动画）
+      preemptResolved = true;
+      preemptResult = 'hit';
+      applyPreemptDmg(PREEMPT_DMG);
+      setMessage('⚡ 抢占先机成功！Boss 受到 '+PREEMPT_DMG+' 点伤害！', true);
+    } else if (el >= PREEMPT_MS + 300) {
+      preemptResolved = true;
+      preemptResult = 'fail';
+      applyPreemptFailDmg(PREEMPT_DMG);   // 💥 抢占失败：Boss 命中玩家扣 2 点（与成功对称）
+      setMessage('💨 圆环填满，抢占失败… Boss 反击命中！你受到 '+PREEMPT_DMG+' 点伤害', true);
+    }
+  } else if (el >= PREEMPT_MS + 1000) {
+    if (bossHp <= 0) { setPhase(PHASE.VICTORY); return; }
+    if (player && player.hp <= 0) { setPhase(PHASE.GAMEOVER); return; }
+    const len = player && player.combo ? player.combo.length : 0;
+    if (preemptSeg + 1 < len) {
+      lastAnimSeg = preemptSeg;   // 已播放动画段（抢占段已播）
+      lastJudgedSeg = preemptSeg; // 抢占段已判定
+      execSeg = preemptSeg + 1;
+      setPhase(PHASE.EXECUTE);    // 继续剩余招式
+      return;
+    }
+    lastJudgedSeg = preemptSeg;
+    setPhase(PHASE.RESOLVE);
+  }
+}
+
+// 🛡️ Boss 防守反击窗口（玩家升龙被 Boss 闪避躲开后）：
+// 玩家在 RETALIATE_MS 内做闪避💨 或 石头🪨 防御手势化解 → 无伤；超时未化解 → Boss 反击命中玩家扣 RETALIATE_DMG
+function updateBossRetaliate(dt, now) {
+  const el = performance.now() - phaseStart;
+  const frac = Math.min(1, el / RETALIATE_MS);
+  const ppos = new THREE.Vector3(0, 2.6, PLAYER_Z);
+  if (!retaliateResolved) {
+    let blocked = false;
+    if (DEMO) {
+      // 演示模式：80% 时自动化解（做石头防御）
+      if (frac >= 0.8 && !retaliateBlocked) { blocked = true; retaliateBlocked = true; }
+    } else if (player && player.active && player.alive) {
+      // 实时模式：做闪避💨 或 石头🪨 手势并保持一段时间 = 化解
+      if (player.punchKeyed) { player.punchKeyed = false; blocked = true; }
+      else if (player.gesture === MOVE.DODGE || player.gesture === MOVE.STONE) {
+        if (player.gestureHoldStart === 0) player.gestureHoldStart = now;
+        if (now - player.gestureHoldStart >= RETALIATE_HOLD_MS) blocked = true;
+      } else {
+        player.gestureHoldStart = 0;
+      }
+    }
+    if (blocked) {
+      retaliateResolved = true; retaliateBlocked = true;
+      spawnFloat(ppos, '🛡️ 化解成功！', '#69f0ae');
+      spawnBurst(ppos, 0x69f0ae, 18, 4);
+      sfx('block');
+      if (player) playMove(player, MOVE_KEYS[MOVE.STONE]);   // 防御格挡动画
+      setMessage('🛡️ 成功化解 Boss 反击！未受伤害', true);
+      if (window.__lastJudge) window.__lastJudge.retaliate = 'blocked';
+    } else if (el >= RETALIATE_MS) {
+      retaliateResolved = true; retaliateBlocked = false;
+      applyPreemptFailDmg(RETALIATE_DMG);   // 💥 Boss 反击命中玩家
+      setMessage(`💥 Boss 反击命中！你受到 ${RETALIATE_DMG} 点伤害`, true);
+      if (window.__lastJudge) window.__lastJudge.retaliate = 'hit';
+    }
+  } else if (el >= RETALIATE_MS + 1000) {
+    if (bossHp <= 0) { setPhase(PHASE.VICTORY); return; }
+    if (player && player.hp <= 0) { setPhase(PHASE.GAMEOVER); return; }
+    const len = player && player.combo ? player.combo.length : 0;
+    if (retaliateSeg + 1 < len) {
+      lastAnimSeg = retaliateSeg;    // 已播放动画段（触发 Boss 反击的段已播）
+      lastJudgedSeg = retaliateSeg;  // 该段已判定
+      execSeg = retaliateSeg + 1;
+      setPhase(PHASE.EXECUTE);       // 继续剩余招式
+      return;
+    }
+    lastJudgedSeg = retaliateSeg;
+    setPhase(PHASE.RESOLVE);
+  }
 }
 
 function updateResolve(dt, now) {
-  if (now - phaseStart > ROUND_END_MS) startRound();
+  if (now - phaseStart > ROUND_END_MS) {
+    if (bossHp <= 0) setPhase(PHASE.VICTORY);
+    else if (player && player.hp <= 0) setPhase(PHASE.GAMEOVER);
+    else startRound();
+  }
+}
+
+function showCombo(n) {
+  const el = document.getElementById('combo-indicator');
+  if (!el) return;
+  el.textContent = n >= COMBO_TRIGGER ? `🔥 连击×${n} 下次伤害翻倍！` : `连击×${n}`;
+  el.classList.add('show');
+}
+function hideCombo() {
+  const el = document.getElementById('combo-indicator');
+  if (el) el.classList.remove('show');
+}
+// 屏幕居中的「已入连招」确认提示（替代 3D 空间飘字，位置参考反击 UI）
+let _comboConfirmTimer = null;
+function showComboConfirm(mv, n) {
+  const el = document.getElementById('combo-confirm');
+  if (!el) return;
+  el.textContent = `${MOVE_ICONS[mv] || '·'} 已入连招 (${n}/${COMBO_LEN})`;
+  el.classList.add('show');
+  clearTimeout(_comboConfirmTimer);
+  _comboConfirmTimer = setTimeout(() => el.classList.remove('show'), 650);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  特效系统（命中粒子 / 速度线 / 震屏 / 全屏闪光，全部对象池）
+// ═══════════════════════════════════════════════════════════
+const flashEl = document.getElementById('flash');
+const MAX_PARTICLES = 240;
+const particles = [];
+const particleGeo = new THREE.BufferGeometry();
+const particlePos = new Float32Array(MAX_PARTICLES*3);
+const particleCol = new Float32Array(MAX_PARTICLES*3);
+for (let i=0;i<MAX_PARTICLES;i++) {
+  particlePos[i*3]=0; particlePos[i*3+1]=-99; particlePos[i*3+2]=0;
+  particleCol[i*3]=1; particleCol[i*3+1]=1; particleCol[i*3+2]=1;
+  particles.push({ life:0, maxLife:1, bx:0, by:0, bz:0, ox:0, oy:0, oz:0, vx:0, vy:0, vz:0 });
+}
+particleGeo.setAttribute('position', new THREE.BufferAttribute(particlePos,3));
+particleGeo.setAttribute('color', new THREE.BufferAttribute(particleCol,3));
+const particleMat = new THREE.PointsMaterial({ size:0.16, vertexColors:true, transparent:true, opacity:0.95, depthWrite:false, blending:THREE.AdditiveBlending });
+const particlePoints = new THREE.Points(particleGeo, particleMat);
+particlePoints.frustumCulled = false;
+scene.add(particlePoints);
+
+// 命中点粒子爆散
+function spawnBurst(pos, colorHex, count, speed, scale=1) {
+  const c = new THREE.Color(colorHex);
+  let used = 0;
+  for (let i=0;i<MAX_PARTICLES && used<count;i++) {
+    const p = particles[i];
+    if (p.life > 0) continue;
+    used++;
+    const a = Math.random()*Math.PI*2;
+    const e = (Math.random()-0.5)*Math.PI*0.9;
+    const s = (0.5 + Math.random()*0.8) * speed * scale;
+    p.bx = pos.x; p.by = pos.y; p.bz = pos.z;
+    p.ox = 0; p.oy = 0; p.oz = 0;
+    p.vx = Math.cos(a)*Math.cos(e)*s;
+    p.vy = Math.sin(e)*s + 1.5;
+    p.vz = Math.sin(a)*Math.cos(e)*s;
+    p.life = 1; p.maxLife = 0.35 + Math.random()*0.4;
+    const idx = i*3;
+    particlePos[idx] = p.bx; particlePos[idx+1] = p.by; particlePos[idx+2] = p.bz;
+    particleCol[idx]=c.r; particleCol[idx+1]=c.g; particleCol[idx+2]=c.b;
+  }
+  particleGeo.attributes.position.needsUpdate = true;
+  particleGeo.attributes.color.needsUpdate = true;
+}
+function updateParticles(dt) {
+  for (let i=0;i<MAX_PARTICLES;i++) {
+    const p = particles[i];
+    if (p.life <= 0) continue;
+    p.life -= dt/p.maxLife;
+    const idx = i*3;
+    if (p.life <= 0) {
+      particlePos[idx+1] = -99;   // 移出视野
+    } else {
+      p.ox += p.vx*dt; p.oy += p.vy*dt; p.oz += p.vz*dt;
+      p.vy -= 9.5*dt;
+      particlePos[idx] = p.bx + p.ox;
+      particlePos[idx+1] = p.by + p.oy;
+      particlePos[idx+2] = p.bz + p.oz;
+    }
+  }
+  particleGeo.attributes.position.needsUpdate = true;
+}
+
+// 速度线（命中瞬间向受击方飞去的白光条）
+const MAX_LINES = 8;
+const speedLines = [];
+const slGeo = new THREE.BoxGeometry(0.09, 0.09, 1);
+for (let i=0;i<MAX_LINES;i++) {
+  const m = new THREE.Mesh(slGeo, new THREE.MeshBasicMaterial({ color:0xffffff, transparent:true, opacity:0.85, blending:THREE.AdditiveBlending, depthWrite:false }));
+  m.visible = false;
+  scene.add(m);
+  speedLines.push({ mesh:m, life:0, maxLife:0.3, speed:0 });
+}
+function spawnSpeedLines(from, to) {
+  const dist = from.distanceTo(to);
+  const dir = new THREE.Vector3().subVectors(to, from).normalize();
+  let used = 0;
+  for (let i=0;i<MAX_LINES && used<6;i++) {
+    const s = speedLines[i];
+    if (s.life > 0) continue;
+    used++;
+    s.life = s.maxLife = 0.26 + Math.random()*0.16;
+    s.mesh.visible = true;
+    s.mesh.position.copy(from).add(new THREE.Vector3((Math.random()-0.5)*0.5, (Math.random()-0.5)*0.5, (Math.random()-0.5)*0.5));
+    s.mesh.lookAt(to);
+    s.mesh.scale.set(0.5+Math.random()*0.7, 0.5+Math.random()*0.7, 1.2 + Math.random()*2.2);
+    s.speed = dist * (0.9 + Math.random()*0.3);
+  }
+}
+function updateSpeedLines(dt) {
+  for (const s of speedLines) {
+    if (s.life <= 0) continue;
+    s.life -= dt;
+    if (s.life <= 0) { s.mesh.visible = false; continue; }
+    s.mesh.material.opacity = Math.max(0, s.life/s.maxLife) * 0.9;
+    s.mesh.translateZ(-s.speed*dt);
+  }
+}
+
+// 屏幕震动 + 过肩相机（震屏偏移叠加，不与 lookAt 耦合）
+let shake = 0;
+const camShakeOffset = new THREE.Vector3();
+function addShake(i) { shake = Math.min(1, Math.max(shake, i)); }
+function applyCamera() {
+  if (shake > 0.002) {
+    shake *= 0.88;
+    camShakeOffset.set((Math.random()-0.5)*shake*0.55, (Math.random()-0.5)*shake*0.45, 0);
+  } else {
+    shake = 0; camShakeOffset.set(0,0,0);
+  }
+  let base = CAM_BASE;
+  let look = CAM_LOOK;
+  // ⚡🥊 抢占先机 / 防守反击 / 反击窗口：三段式镜头（远景→中景对峙→玩家特写）
+  if (phase === PHASE.PREEMPT || phase === PHASE.COUNTER || phase === PHASE.BOSSRETALIATE) {
+    const el = performance.now() - phaseStart;
+    const resolved = phase === PHASE.PREEMPT ? preemptResolved : (phase === PHASE.COUNTER ? counterResolved : retaliateResolved);
+    // ① 远景→中景：0~0.35s 平滑拉近擂台中央对峙点
+    const kMid = Math.min(1, el / 350) * 0.5;
+    const midBase = new THREE.Vector3(CAM_BASE.x*kMid, CAM_BASE.y*(0.55+0.45*kMid), CAM_BASE.z*kMid + MID_Z*(1-kMid));
+    const midLook = new THREE.Vector3(0, 2.9, MID_Z);
+    if (resolved) {
+      // 判定结束：拉回中景对峙
+      base = midBase; look = midLook;
+    } else if (el > 350) {
+      // ② 中景→玩家特写：0.35s 起 0.25s 内逼近玩家虚拟形象上半身
+      const kClose = Math.min(1, (el - 350) / 250);
+      const closeBase = new THREE.Vector3(
+        THREE.MathUtils.lerp(midBase.x, 0.9, kClose),
+        THREE.MathUtils.lerp(midBase.y, 2.2, kClose),
+        THREE.MathUtils.lerp(midBase.z, CLASH_Z_PLAYER - 1.7, kClose)
+      );
+      const closeLook = new THREE.Vector3(0, 2.7, CLASH_Z_PLAYER);
+      base = closeBase;
+      look = closeLook;
+    } else {
+      base = midBase; look = midLook;
+    }
+  }
+  camera.position.copy(base).add(camShakeOffset);
+  camera.lookAt(look);
+}
+
+// 全屏命中闪光
+let flashOpacity = 0;
+function triggerFlash(alpha) { flashOpacity = Math.min(1, flashOpacity + (alpha || 0.35)); }
+function updateFlash() {
+  if (flashOpacity > 0.004) {
+    flashOpacity *= 0.9;
+    flashEl.style.opacity = flashOpacity.toFixed(3);
+  } else if (flashEl.style.opacity !== '0') {
+    flashOpacity = 0; flashEl.style.opacity = '0';
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
 //  Avatar 渲染（骨骼 → 3D）
 // ═══════════════════════════════════════════════════════════
-// 正面 2D 骨骼 (x:0..1, y:0..1) → 侧身 45° 3D 坐标
-// 映射：世界 X ≈ 镜面左/右（玩家右=屏幕右→镜像到形象），世界 Z = 朝向 Boss(纵深)
-function updateAvatar(p) {
+function updateAvatar(p, dt) {
   const av = p.avatar;
   const g = av.group;
-  // 玩家 X 坐标：轨道组中心 + 轨道偏移。
-  // lane ∈ {-1,0,1}，乘 LANE_STEP（= 轨道间距）后正好落在相邻轨道中心。
-  const x = WORLD_SHIFT_X + p.lane * LANE_STEP;
-  const y = 0;
-  const z = PLAYER_Z;
-  g.position.set(x, y, z);
-  // 玩家正面对 Boss（沿 +Z 方向看），不旋转 Y
   g.rotation.y = 0;
-  // 身体倾斜：左右摆动（X 轴旋转）
-  g.rotation.z = p.lane * -0.18;
-  // 玩家轻微"抬"一点（脚离地）
-
-  // 核心判定点可见性（仅 Boss 攻击阶段）
-  av.core.visible = phase === PHASE.BOSS_ATTACK;
-  av.core.position.set(0, 1.0, 0.4);  // 胸口略前伸
-
-  // 动画状态
-  if (p.attackAnim) {
-    const mv = p.attackAnim.move;
-    const t = p.attackAnim.t;
-    if (MOVES[mv]?.type === 'attack') {
-      if (mv === MOVE.SCISSORS) {
-        // 右手前刺（向 +Z 方向），手臂从右肩伸出
-        setLimb(av.upperR, SHR, new THREE.Vector3(0.62,1.25,0.35));
-        setLimb(av.foreR,  new THREE.Vector3(0.62,1.25,0.35), new THREE.Vector3(0.68,1.25,1.15));
-        setLimb(av.upperL, SHL, new THREE.Vector3(-0.55,1.0,0.2));
-        setLimb(av.foreL,  new THREE.Vector3(-0.55,1.0,0.2), new THREE.Vector3(-0.65,0.78,0.35));
-      } else if (mv === MOVE.DRAGON) {
-        const up = Math.sin(Math.min(1,t/0.4)*Math.PI);
-        // 上勾：右拳向 +Z 上方冲天
-        setLimb(av.upperR, SHR, new THREE.Vector3(0.6,1.45+up*0.3,0.35));
-        setLimb(av.foreR,  new THREE.Vector3(0.6,1.45+up*0.3,0.35), new THREE.Vector3(0.55,1.95+up*0.5,0.5));
-        setLimb(av.upperL, SHL, new THREE.Vector3(-0.55,0.95,0.15));
-        setLimb(av.foreL,  new THREE.Vector3(-0.55,0.95,0.15), new THREE.Vector3(-0.7,0.68,0.2));
-      }
-      return;
-    }
-    if (MOVES[mv]?.type === 'guard') {
-      // 防御：双臂在胸前交叉成 X
-      setLimb(av.upperL, SHL, new THREE.Vector3(0.15,1.1,0.35));
-      setLimb(av.foreL,  new THREE.Vector3(0.15,1.1,0.35), new THREE.Vector3(-0.15,1.18,0.5));
-      setLimb(av.upperR, SHR, new THREE.Vector3(-0.15,1.1,0.35));
-      setLimb(av.foreR,  new THREE.Vector3(-0.15,1.1,0.35), new THREE.Vector3(0.15,1.18,0.5));
-      return;
-    }
-    if (MOVES[mv]?.type === 'pass') {
-      // 不出招：双手自然下垂
-      setLimb(av.upperL, SHL, new THREE.Vector3(-0.5,0.8,0.05));
-      setLimb(av.foreL,  new THREE.Vector3(-0.5,0.8,0.05), new THREE.Vector3(-0.55,0.5,0.05));
-      setLimb(av.upperR, SHR, new THREE.Vector3(0.5,0.8,0.05));
-      setLimb(av.foreR,  new THREE.Vector3(0.5,0.8,0.05), new THREE.Vector3(0.55,0.5,0.05));
-      return;
-    }
+  // 出招前扑（lunge 朝 Boss +Z 方向）
+  const st = p.animState;
+  let lunge = 0;
+  if (st && st.active && st.clip.frames[st.phaseIdx]) {
+    const f = st.clip.frames[st.phaseIdx];
+    if (f.name === 'STRIKE') lunge = Math.sin(st.phaseT*Math.PI) * 0.85;
+    if (f.name === 'WINDUP') lunge = -0.12;
   }
+  // 受击后仰
+  let leanZ = 0;
+  if (p.hitFlashT > 0) {
+    p.hitFlashT -= dt;
+    leanZ = -0.12;
+  }
+  // 升龙拳：手臂上举并整个人跳起（STRIKE 阶段弹跳，WINDUP 下蹲蓄力）
+  let jumpY = 0;
+  if (st && st.active && st.move === 'dragon') {
+    const f = st.clip.frames[st.phaseIdx];
+    if (f.name === 'STRIKE') jumpY = Math.sin(st.phaseT*Math.PI) * 1.35;
+    else if (f.name === 'WINDUP') jumpY = -0.12;
+  }
+  // 贴身肉搏：PREEMPT/COUNTER/BOSSRETALIATE 阶段从擂台近侧冲向中央，其余阶段退回站位
+  const clashTarget = (phase === PHASE.PREEMPT || phase === PHASE.COUNTER || phase === PHASE.BOSSRETALIATE) ? CLASH_Z_PLAYER : PLAYER_Z;
+  if (p.clashZ === undefined) p.clashZ = PLAYER_Z;
+  p.clashZ = THREE.MathUtils.lerp(p.clashZ, clashTarget, Math.min(1, dt * 12));
+  g.position.set(0, 0, p.clashZ + lunge);
+  g.rotation.z = leanZ;
+  // 死亡倒地
+  if (!p.alive) {
+    g.rotation.x = Math.min(Math.PI/2, g.rotation.x + dt*2.5);
+    g.position.y = -Math.sin(g.rotation.x)*0.85;
+    g.position.z = p.clashZ + 0.3;
+  } else {
+    g.rotation.x = 0;
+    g.position.y = jumpY;
+  }
+  // 待机呼吸：胸腔轻微缩放
+  const breath = 1 + Math.sin(performance.now() * 0.002 + p.index) * 0.015;
+  if (av.bones[JOINTS.CHEST]) av.bones[JOINTS.CHEST].group.scale.set(breath, breath, breath);
+  updateMoveAnim(p, dt);
+}
 
-  // 默认：身体直立，双手自然下垂在躯干两侧
-  setLimb(av.upperL, SHL, new THREE.Vector3(-0.52,0.68,0.05));
-  setLimb(av.foreL,  new THREE.Vector3(-0.52,0.68,0.05), new THREE.Vector3(-0.58,0.3,0.05));
-  setLimb(av.upperR, SHR, new THREE.Vector3(0.52,0.68,0.05));
-  setLimb(av.foreR,  new THREE.Vector3(0.52,0.68,0.05), new THREE.Vector3(0.58,0.3,0.05));
+// 💨 闪避方/反击方残影（COUNTER/BOSSRETALIATE 触发瞬间沿冲刺路径闪现的半透明 ghost）
+const ghostPool = [];   // { group, life }
+function spawnGhostTrail() { return spawnGhostTrailFor('player'); }
+// role: 'player'（玩家冲向 Boss，用于玩家闪避/反击）| 'boss'（Boss 冲向玩家，用于 Boss 防守反击）
+function spawnGhostTrailFor(role) {
+  const av = role === 'boss' ? boss.avatar : (player && player.avatar);
+  if (!av) return;
+  const fromZ = av.group.position.z;
+  const toZ = role === 'boss' ? CLASH_Z_BOSS : CLASH_Z_PLAYER;
+  for (let i = 0; i < 3; i++) {
+    const t = (i + 1) / 4;   // 0.25 / 0.5 / 0.75 等距散布
+    const g = av.group.clone(true);
+    g.traverse(o => {
+      if (o.isMesh) {
+        o.material = o.material.clone();
+        o.material.transparent = true;
+        o.material.opacity = 0.32 * (0.55 + 0.45 * t);
+        o.material.depthWrite = false;
+      }
+    });
+    g.position.set(0, 0, THREE.MathUtils.lerp(fromZ, toZ, t));
+    scene.add(g);
+    ghostPool.push({ group: g, life: 0.45 });
+  }
+}
+function updateGhosts(dt) {
+  for (let i = ghostPool.length - 1; i >= 0; i--) {
+    const gh = ghostPool[i];
+    gh.life -= dt;
+    const t = Math.max(0, gh.life / 0.45);
+    gh.group.traverse(o => { if (o.isMesh && o.material) o.material.opacity = 0.32 * t; });
+    if (gh.life <= 0) { scene.remove(gh.group); ghostPool.splice(i, 1); }
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
 //  HUD 更新
 // ═══════════════════════════════════════════════════════════
+// DOM 引用缓存（避免每帧 getElementById 查询开销）
+const chargeFill = document.getElementById('charge-fill');
+const chargeText = document.getElementById('charge-text');
+const chargeHud = document.getElementById('charge-hud');
+const playerChargeFill = document.getElementById('player-charge-fill');
+const playerChargeText = document.getElementById('player-charge-text');
+const bossChargeFill = document.getElementById('boss-charge-fill');
+const bossChargeText = document.getElementById('boss-charge-text');
+const bossChargeHud = document.getElementById('boss-charge-hud');
+// 架势条增长脉冲反馈：让玩家直观看到"正常增长"
+function pulseCharge() {
+  if (chargeFill) { chargeFill.classList.remove('pulse'); void chargeFill.offsetWidth; chargeFill.classList.add('pulse'); }
+  if (playerChargeFill) { playerChargeFill.classList.remove('pulse'); void playerChargeFill.offsetWidth; playerChargeFill.classList.add('pulse'); }
+}
+function pulseBossCharge() {
+  if (bossChargeFill) { bossChargeFill.classList.remove('pulse'); void bossChargeFill.offsetWidth; bossChargeFill.classList.add('pulse'); }
+}
 function updateBossHp() {
   bossHpFill.style.width = (bossHp/MAX_HP_BOSS*100)+'%';
   bossHpText.textContent = `${bossHp}/${MAX_HP_BOSS}`;
@@ -1125,36 +2729,92 @@ function updatePlayerHp(p) {
   h.hpText.textContent = p.hp;
 }
 function updateHud() {
-  players.forEach(p => {
-    const h = HUD[p.index];
-    h.el.classList.toggle('inactive', !p.active);
-    h.el.classList.toggle('dead', !p.alive);
-    // 状态文本
-    let st = '未就位';
-    let stCls = '';
-    if (p.active && p.alive) {
-      if (phase === PHASE.BOSS_ATTACK) {
-        if (p.defending) { st='🪨 防御'; stCls='guard'; }
-        else if (p.lane !== 0) { st = p.lane>0?'➡️ 右轨':'⬅️ 左轨'; stCls='dodge'; }
-        else { st='⚪ 中立'; }
-      } else if (phase === PHASE.SELECT) {
-        st = p.gesture ? (MOVES[p.gesture].icon+' '+MOVES[p.gesture].name) : '🕐 待摆招';
-        stCls = p.gesture!==null ? 'attack' : '';
-      } else {
-        st = '🎮';
+  const p = player;
+  if (!p) return;
+  // ⚔️ 架势条 UI（玩家）
+  if (chargeFill && chargeText) {
+    chargeFill.style.width = (playerCharge/CHARGE_MAX*100)+'%';
+    chargeText.textContent = `${playerCharge}/${CHARGE_MAX}`;
+    // 闪避联动标记（下回合攻击 +1/-1）提示
+    if (chargeHud) chargeHud.style.borderColor = nextAtkMod > 0 ? '#69f0ae' : nextAtkMod < 0 ? '#ff6b6b' : '#ffd84d33';
+  }
+  // ⚔️ 玩家血条上方架势条 UI（与底部架势条同步）
+  if (playerChargeFill && playerChargeText) {
+    playerChargeFill.style.width = (playerCharge/CHARGE_MAX*100)+'%';
+    playerChargeText.textContent = `${playerCharge}/${CHARGE_MAX}`;
+  }
+  // 🔴 Boss 架势条 UI
+  if (bossChargeFill && bossChargeText) {
+    bossChargeFill.style.width = (bossCharge/CHARGE_MAX*100)+'%';
+    bossChargeText.textContent = `${bossCharge}/${CHARGE_MAX}`;
+    if (bossChargeHud) bossChargeHud.style.borderColor = bossNextAtkMod > 0 ? '#69f0ae' : bossNextAtkMod < 0 ? '#ff6b6b' : '#ff6b6b33';
+  }
+  const h = HUD[0];
+  h.el.classList.toggle('inactive', !p.active);
+  h.el.classList.toggle('dead', !p.alive);
+  h.el.classList.toggle('locked', p.combo.length > 0 && (phase===PHASE.CHARGE||phase===PHASE.EXECUTE||phase===PHASE.COUNTER||phase===PHASE.PREEMPT));
+  // 状态文本
+  let st = '未就位';
+  let stCls = '';
+  if (p.active && p.alive) {
+    if (phase === PHASE.SELECT) {
+      if (p.combo.length > 0) { st = `✅ 连招 ${p.combo.map(m=>MOVE_ICONS[m]).join('')} (${p.combo.length}/${COMBO_LEN})`; stCls='attack'; }
+      else if (p.gesture !== null) { st = `🕐 ${MOVE_ICONS[p.gesture]} ${MOVES[p.gesture].name}`; stCls='attack'; }
+      else st = `🕐 摆招… (0/${COMBO_LEN})`;
+    } else if (phase === PHASE.CHARGE) { st = '⚡ 连招充能！'; stCls='attack'; }
+    else if (phase === PHASE.EXECUTE) { st = `⚔️ 连招 ${execSeg+1}/${execLen}`; stCls='attack'; }
+    else if (phase === PHASE.COUNTER) { st = '🥊 反击窗口！'; stCls='attack'; }
+    else if (phase === PHASE.PREEMPT) { st = '⚡ 抢占先机！'; stCls='attack'; }
+    else if (phase === PHASE.BOSSRETALIATE) { st = '🛡️ 防守窗口！'; stCls='attack'; }
+    else if (phase === PHASE.RESOLVE) { st = '💥 结算'; }
+    else st = '🎮';
+  } else if (p.active && !p.alive) st='💀 被击倒';
+  h.status.textContent = st;
+  h.status.className = 'p-status '+stCls;
+  const locked = phase === PHASE.CHARGE || phase === PHASE.EXECUTE || phase === PHASE.COUNTER || phase === PHASE.PREEMPT || phase === PHASE.BOSSRETALIATE || phase === PHASE.RESOLVE || phase === PHASE.VICTORY || phase === PHASE.GAMEOVER;
+  // 玩家技能卡（5 连招：逐格填充）
+  for (let i=0;i<h.moveCards.length;i++) {
+    const card = h.moveCards[i];
+    card.style.display = i < COMBO_LEN ? 'inline-flex' : 'none';
+    const mv = p.combo[i] !== undefined ? p.combo[i] : null;
+    const filled = mv !== null;
+    const prevState = card.dataset.state;
+    const newState = !filled ? 'empty' : (locked ? 'locked' : 'filled');
+    if (prevState !== newState) {
+      card.dataset.state = newState;
+      const iconEl = card.querySelector('.mc-icon');
+      const labelEl = card.querySelector('.mc-label');
+      if (iconEl) iconEl.textContent = filled ? MOVE_ICONS[mv] : '';
+      if (labelEl) labelEl.textContent = filled ? MOVES[mv].name : '未选';
+      if (filled && newState === 'filled') {
+        card.classList.remove('pop'); void card.offsetWidth; card.classList.add('pop');
+      } else if (newState === 'locked') {
+        card.classList.add('locking');
       }
-      if (p.combo.length >= COMBO_LEN) st = '✅ 锁定';
-    } else if (p.active && !p.alive) { st='💀 出局'; }
-    h.status.textContent = st;
-    h.status.className = 'p-status '+stCls;
-    // 组合槽
-    let comboHtml = '';
-    for (let i=0;i<COMBO_LEN;i++) {
-      const mv = p.combo[i];
-      comboHtml += `<span class="slot ${mv!==undefined?'filled':''}">${mv!==undefined?MOVE_ICONS[mv]:''}</span>`;
     }
-    h.combo.innerHTML = comboHtml;
-  });
+    card.classList.toggle('current', phase === PHASE.EXECUTE && i === execSeg);
+  }
+  // Boss 出招卡（5 格）：EXECUTE 阶段逐段亮出，其余阶段全部亮出
+  const revealAll = phase === PHASE.RESOLVE || phase === PHASE.VICTORY || phase === PHASE.GAMEOVER;
+  const revealSeg = (phase === PHASE.EXECUTE || phase === PHASE.COUNTER || phase === PHASE.PREEMPT || phase === PHASE.BOSSRETALIATE) ? lastJudgedSeg + 1 : 0;
+  for (let i=0;i<bossCardEls.length;i++) {
+    const c = bossCardEls[i];
+    c.style.display = 'inline-flex';
+    const shown = revealAll || i < revealSeg || i <= lastJudgedSeg;
+    const bm = (bossMoves[i] !== undefined && shown) ? bossMoves[i] : undefined;
+    if (c.dataset.mv !== String(bm)) {
+      c.dataset.mv = String(bm);
+      c.textContent = bm !== undefined ? MOVE_ICONS[bm] : '?';
+      c.classList.toggle('empty', bm === undefined);
+    }
+    c.classList.toggle('current', phase === PHASE.EXECUTE && i === execSeg);
+    c.classList.toggle('done', i < lastJudgedSeg || (phase === PHASE.EXECUTE && i < execSeg && execSeg >= lastJudgedSeg));
+  }
+  // AI 难度标签 + 充能提示
+  const dl = document.getElementById('difficulty-text');
+  if (dl) dl.textContent = ['简单','普通','困难'][AI_LEVEL] || '普通';
+  const tip = document.getElementById('charge-tip');
+  if (tip) tip.classList.toggle('show', phase === PHASE.CHARGE);
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1167,29 +2827,185 @@ function project(pos3) {
 function drawOverlay() {
   octx.clearRect(0,0,innerWidth,innerHeight);
   if (phase === PHASE.SELECT) drawSelectRing();
-  if (phase === PHASE.BOSS_ATTACK) drawBossWarnRing();
+  else if (phase === PHASE.CHARGE) drawChargeRing();
+  else if (phase === PHASE.COUNTER) drawClashRing(false);
+  else if (phase === PHASE.PREEMPT) drawClashRing(true);
+  else if (phase === PHASE.BOSSRETALIATE) drawRetaliateRing();
+}
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x+r, y);
+  ctx.arcTo(x+w, y, x+w, y+h, r);
+  ctx.arcTo(x+w, y+h, x, y+h, r);
+  ctx.arcTo(x, y+h, x, y, r);
+  ctx.arcTo(x, y, x+w, y, r);
+  ctx.closePath();
 }
 function drawSelectRing() {
-  const el = performance.now() - phaseStart;
-  const remain = Math.max(0, (SELECT_MS-el)/1000);
-  const frac = 1 - el/SELECT_MS;
-  const r = 30;
-  const x = innerWidth-70, y = innerHeight-130;
-  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2); octx.strokeStyle='#ffffff33'; octx.lineWidth=6; octx.stroke();
-  octx.beginPath(); octx.arc(x,y,r,-Math.PI/2,-Math.PI/2+Math.PI*2*frac); octx.strokeStyle='#4ec9ff'; octx.lineWidth=6; octx.stroke();
-  octx.fillStyle='#fff'; octx.font='bold 18px sans-serif'; octx.textAlign='center'; octx.textBaseline='middle';
-  octx.fillText(remain.toFixed(1), x, y);
+  const p = player;
+
+  // ── 选招进度：连招槽位 + 当前招保持确认进度 ──
+  if (!p || !p.active || !p.alive) return;
+  const slotW = 46, slotH = 42, gap = 8;
+  const n = p.combo.length;
+  const x0 = innerWidth/2 - (COMBO_LEN*(slotW+gap) - gap)/2;
+  const y0 = innerHeight - 120;
+  const icons = MOVE_ICONS;
+  // 每槽：已选=实心并显示图标；未选=空心；当前确认中=进度条
+  for (let i = 0; i < COMBO_LEN; i++) {
+    const sx = x0 + i*(slotW+gap);
+    const filled = i < n;
+    // 槽底
+    octx.fillStyle = 'rgba(10,14,26,0.55)';
+    octx.strokeStyle = filled ? '#4ec9ff' : '#ffffff2e';
+    octx.lineWidth = 2;
+    roundRect(octx, sx, y0, slotW, slotH, 8);
+    octx.fill(); octx.stroke();
+    if (filled) {
+      octx.fillStyle = '#fff'; octx.font = '20px sans-serif';
+      octx.textAlign = 'center'; octx.textBaseline = 'middle';
+      octx.fillText(icons[p.combo[i]] || '?', sx + slotW/2, y0 + slotH/2);
+    } else if (i === n) {
+      // 当前待确认招：显示正在确认的进度环
+      const g = p.gesture;
+      let holdFrac = 0;
+      if (g !== null && p.gestureHoldStart !== 0 && performance.now() - p.lastConfirm >= RECONFIRM_MS) {
+        holdFrac = Math.min(1, (performance.now() - p.gestureHoldStart) / SELECT_HOLD_MS);
+      }
+      octx.fillStyle = 'rgba(255,255,255,0.25)'; octx.font = '15px sans-serif';
+      octx.textAlign = 'center'; octx.textBaseline = 'middle';
+      octx.fillText(g !== null ? icons[g] : '?', sx + slotW/2, y0 + slotH/2 - 3);
+      // 确认进度条
+      const bw = slotW - 12, bh = 5;
+      const bx = sx + 6, by = y0 + slotH - 11;
+      octx.fillStyle = '#ffffff2a'; roundRect(octx, bx, by, bw, bh, 2.5); octx.fill();
+      if (holdFrac > 0) {
+        octx.fillStyle = holdFrac >= 1 ? '#4ec9ff' : '#ffd84d';
+        roundRect(octx, bx, by, Math.max(1, bw*holdFrac), bh, 2.5); octx.fill();
+      }
+    }
+  }
+  // 标题：已选 X/5 + 当前招提示
+  octx.fillStyle = '#fff'; octx.font = 'bold 16px sans-serif';
+  octx.textAlign = 'center'; octx.textBaseline = 'middle';
+  octx.fillText(`已选 ${n}/${COMBO_LEN}　保持动作 1 秒确认`, x0 + (COMBO_LEN*(slotW+gap)-gap)/2, y0 - 24);
 }
-function drawBossWarnRing() {
+// 充能圆环（攻击招确认后）：满格放下手 = 完美出拳
+function drawChargeRing() {
+  const frac = nowChargeFrac();
+  const r = 40;
+  const x = innerWidth/2, y = innerHeight/2 - 60;
+  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2); octx.strokeStyle='#ffffff22'; octx.lineWidth=9; octx.stroke();
+  // 完美区间（55%~100%）高亮弧
+  octx.beginPath(); octx.arc(x,y,r,-Math.PI/2+Math.PI*2*PERFECT_FRAC, -Math.PI/2+Math.PI*2); octx.strokeStyle='#ffd84d55'; octx.lineWidth=9; octx.stroke();
+  // 充能进度弧
+  octx.beginPath(); octx.arc(x,y,r,-Math.PI/2,-Math.PI/2+Math.PI*2*frac); octx.strokeStyle= frac>=PERFECT_FRAC ? '#ffd84d' : '#4ec9ff'; octx.lineWidth=9; octx.stroke();
+  octx.fillStyle='#fff'; octx.font='bold 15px sans-serif'; octx.textAlign='center'; octx.textBaseline='middle';
+  octx.fillText(frac>=PERFECT_FRAC ? '💥 放下手！' : '👊 充能…', x, y);
+}
+// 反击扩散圆环（Boss 升龙挥空）：圆环由中心向四周扩散填充，填满瞬间（±50ms）出拳 = 完美反击
+// ⚡🥊 统一圆环判定 UI（抢占先机 / 防守反击通用）：白色外圈 + 蓝紫渐变粒子从外向内收拢填充 + 完美时机金色高亮弧
+// 判定命中后圆环整体金色闪烁，上方弹出 FIRST STRIKE / COUNTER STRIKE 大字
+function drawClashRing(isPreempt) {
   const el = performance.now() - phaseStart;
-  const remain = Math.max(0, (BOSS_WARN_MS-el)/1000);
-  const frac = 1 - el/BOSS_WARN_MS;
-  const r = 30;
-  const x = innerWidth-70, y = innerHeight-130;
-  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2); octx.strokeStyle='#ffffff33'; octx.lineWidth=6; octx.stroke();
-  octx.beginPath(); octx.arc(x,y,r,-Math.PI/2,-Math.PI/2+Math.PI*2*frac); octx.strokeStyle='#ff6b6b'; octx.lineWidth=6; octx.stroke();
-  octx.fillStyle='#fff'; octx.font='bold 18px sans-serif'; octx.textAlign='center'; octx.textBaseline='middle';
-  octx.fillText(remain.toFixed(1), x, y);
+  const winMs = isPreempt ? PREEMPT_MS : COUNTER_MS;
+  const resolved = isPreempt ? preemptResolved : counterResolved;
+  const result = isPreempt ? preemptResult : counterResult;
+  const hit = resolved && (result === 'hit' || result === 'perfect');
+  const frac = Math.min(1, el / winMs);
+  const r = 44;
+  const x = innerWidth/2, y = innerHeight/2 - 60;
+  // 命中结果：金色闪烁 0.6s
+  const pulse = hit ? (0.6 + 0.4 * Math.sin(performance.now() / 60)) : 1;
+  // 白色外圈基准
+  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2); octx.strokeStyle= hit ? 'rgba(255,216,77,'+(0.7*pulse)+')' : '#ffffff33'; octx.lineWidth=9; octx.stroke();
+  // 蓝紫渐变粒子底（从外向内）
+  const grad = octx.createRadialGradient(x, y, r, x, y, r);
+  grad.addColorStop(0, 'rgba(139,92,246,0.02)');
+  grad.addColorStop(0.7, 'rgba(78,150,255,0.18)');
+  grad.addColorStop(1, 'rgba(255,255,255,0.10)');
+  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2);
+  octx.fillStyle = hit ? 'rgba(255,216,77,'+(0.30*pulse)+')' : grad;
+  octx.fill();
+  // 完美时机高亮弧（填满瞬间前后）
+  const pFrom = Math.max(0, 1 - (isPreempt ? 0 : COUNTER_PERFECT_MS/COUNTER_MS));
+  if (!isPreempt) {
+    octx.beginPath(); octx.arc(x,y,r,-Math.PI/2+Math.PI*2*pFrom, -Math.PI/2+Math.PI*2); octx.strokeStyle='#ffd84d99'; octx.lineWidth=9; octx.stroke();
+  }
+  // 填充前沿：从外向内收拢的蓝→金环（未命中时显示进度）
+  if (!hit) {
+    const fr = r*(1-frac);
+    octx.beginPath(); octx.arc(x,y,fr,0,Math.PI*2);
+    octx.strokeStyle = frac >= 1 ? '#ffc83c' : '#4ec9ff';
+    octx.lineWidth = 6; octx.stroke();
+  }
+  octx.fillStyle='#fff'; octx.font='bold 15px sans-serif'; octx.textAlign='center'; octx.textBaseline='middle';
+  octx.fillText(hit ? (isPreempt ? '💥 FIRST STRIKE！' : '💥 COUNTER STRIKE！') : (isPreempt ? '⚡ 填满前出拳！' : '🥊 填满时出拳！'), x, y);
+  // 金色结果大字
+  if (hit) {
+    const title = isPreempt ? 'FIRST STRIKE' : 'COUNTER STRIKE';
+    octx.font='bold 46px sans-serif';
+    octx.fillStyle='rgba(0,0,0,0.45)';
+    octx.fillText(title, x+2, y+2);
+    octx.fillStyle='rgba(255,216,77,'+(0.9*pulse)+')';
+    octx.fillText(title, x, y);
+    octx.font='bold 16px sans-serif';
+    octx.fillStyle='rgba(255,255,255,0.9)';
+    octx.fillText(isPreempt ? '⚡ 抢占成功！' : '🥊 反击命中！', x, y + 34);
+  } else if (!resolved) {
+    // 剩余时间
+    const remain = Math.max(0, (winMs - el)/1000);
+    octx.font='bold 20px sans-serif'; octx.fillStyle='#4ec9ff';
+    octx.fillText(remain.toFixed(1)+'s', x, y - r - 26);
+  }
+}
+
+// 🛡️ Boss 防守反击圆环：红/金危机风格，玩家做闪避💨/石头🪨防御化解；未化解圆环填满即被 Boss 命中
+function drawRetaliateRing() {
+  const el = performance.now() - phaseStart;
+  const winMs = RETALIATE_MS;
+  const resolved = retaliateResolved;
+  const blocked = resolved && retaliateBlocked;
+  const hit = resolved && !retaliateBlocked;
+  const frac = Math.min(1, el / winMs);
+  const r = 44;
+  const x = innerWidth/2, y = innerHeight/2 - 60;
+  const pulse = hit ? (0.6 + 0.4 * Math.sin(performance.now() / 60)) : 1;
+  // 白色外圈基准
+  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2); octx.strokeStyle = hit ? 'rgba(255,107,107,'+(0.8*pulse)+')' : '#ffffff33'; octx.lineWidth=9; octx.stroke();
+  // 红/金危机渐变粒子底
+  const grad = octx.createRadialGradient(x, y, r, x, y, r);
+  grad.addColorStop(0, 'rgba(255,80,80,0.04)');
+  grad.addColorStop(0.7, 'rgba(255,120,60,0.20)');
+  grad.addColorStop(1, 'rgba(255,220,120,0.10)');
+  octx.beginPath(); octx.arc(x,y,r,0,Math.PI*2);
+  octx.fillStyle = hit ? 'rgba(255,107,107,'+(0.30*pulse)+')' : grad;
+  octx.fill();
+  // 填充前沿：从外向内收拢的金→红环（未化解时显示进度）
+  if (!resolved) {
+    const fr = r*(1-frac);
+    octx.beginPath(); octx.arc(x,y,fr,0,Math.PI*2);
+    octx.strokeStyle = frac >= 1 ? '#ff4d4d' : '#ffd84d';
+    octx.lineWidth = 6; octx.stroke();
+  }
+  octx.fillStyle='#fff'; octx.font='bold 15px sans-serif'; octx.textAlign='center'; octx.textBaseline='middle';
+  octx.fillText(resolved ? (blocked ? '🛡️ 防御成功！' : '💥 被反击命中！') : '🛡️ 做闪避💨 / 石头🪨化解！', x, y);
+  // 结果大字
+  if (resolved) {
+    const title = blocked ? 'DEFENSE' : 'GOT HIT';
+    octx.font='bold 46px sans-serif';
+    octx.fillStyle='rgba(0,0,0,0.45)';
+    octx.fillText(title, x+2, y+2);
+    octx.fillStyle=(blocked ? 'rgba(105,240,174,' : 'rgba(255,107,107,')+(0.9*pulse)+')';
+    octx.fillText(title, x, y);
+    octx.font='bold 16px sans-serif';
+    octx.fillStyle='rgba(255,255,255,0.9)';
+    octx.fillText(blocked ? '🛡️ 成功化解！' : '💥 Boss 反击命中！', x, y + 34);
+  } else {
+    const remain = Math.max(0, (winMs - el)/1000);
+    octx.font='bold 20px sans-serif'; octx.fillStyle='#ffd84d';
+    octx.fillText(remain.toFixed(1)+'s', x, y - r - 26);
+  }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -1205,20 +3021,289 @@ async function setupCamera() {
     cameraBtn.textContent = '⚠️ 摄像头失败（演示模式运行）';
     console.warn('camera error', e);
     cameraActive = false;
+    // 摄像头不可用：自动回退到演示模式，保证仍可游玩
+    if (!DEMO) {
+      DEMO = true;
+      poseModelInfo = 'demo / fallback';
+      setMessage('摄像头不可用，已切换为演示模式', true);
+      if (demoHint) { demoHint.style.display = 'none'; }
+    }
   }
 }
 function autoStartIfNeeded() {
-  if (activeCount>0 && phase===PHASE.WAITING) {
-    if (!DEMO && !cameraActive) return; // 非 demo 且无摄像头不自动开始
+  if (phase===PHASE.WAITING) {
+    // 必须在「摄像头已开启 且 骨骼识别正常」时才自动开始；进入界面不会立刻开始
+    if (!DEMO && !(cameraActive && activeCount > 0)) return;
+    // 教程/校准界面打开时不自动开始，否则 startGame 会隐藏界面，导致校准无法进行
+    const tut = document.getElementById('tutorial-overlay');
+    const calib = document.getElementById('calib-overlay');
+    if (!tut.classList.contains('hidden') || !calib.classList.contains('hidden')) return;
     startGame();
   }
 }
 cameraBtn.addEventListener('click', setupCamera);
 startBtn.addEventListener('click', () => {
-  if (!DEMO && !cameraActive) { setMessage('请先点击「开启摄像头」', true); return; }
-  if (!DEMO && activeCount === 0) { setMessage('请站到摄像头前，让上半身入镜', true); return; }
+  // 演示模式（?demo）可直接开始
+  if (DEMO) { startGame(); return; }
+  // 普通游玩：必须「开启摄像头 且 骨骼识别正常」才开始，而非进入界面立刻开始
+  if (!cameraActive) { setMessage('请先点击「🎥 开启摄像头」，骨骼识别正常后即可开始', true); return; }
+  if (activeCount === 0) { setMessage('请站到摄像头前，让上半身入镜，骨骼识别到后即可开始', true); return; }
   startGame();
 });
+
+// ═══════════════════════════════════════════════════════════
+//  开发者面板：按 Q 开关；参数调整 / 作弊模式 / 调试
+// ═══════════════════════════════════════════════════════════
+function initDevPanel() {
+  const rebuild = () => { JUDGE_TABLE = buildJudgeTable(); };
+  // 数值建构实时应用
+  devMaxHp.addEventListener('change', () => {
+    MAX_HP_PLAYER = Math.max(1, parseInt(devMaxHp.value) || 10);
+    players.forEach(p => { p.hp = Math.min(p.hp, MAX_HP_PLAYER); if (player) updatePlayerHp(player); });
+  });
+  devBossHp.addEventListener('change', () => {
+    MAX_HP_BOSS = Math.max(1, parseInt(devBossHp.value) || 20);
+    updateBossHp();
+  });
+  const devChargeMs = document.getElementById('dev-chargems');
+  if (devChargeMs) devChargeMs.addEventListener('change', () => {
+    CHARGE_MS = Math.max(800, parseInt(devChargeMs.value) || 2000);
+  });
+  const devAi = document.getElementById('dev-ai');
+  if (devAi) devAi.addEventListener('change', () => { AI_LEVEL = parseInt(devAi.value) || 1; });
+  devDmgScissors.addEventListener('change', () => {
+    DMG_SCISSORS = Math.max(0, parseInt(devDmgScissors.value) || 1);
+    rebuild();
+  });
+  devDmgDragon.addEventListener('change', () => {
+    DMG_DRAGON = Math.max(0, parseInt(devDmgDragon.value) || 2);
+    rebuild();
+  });
+  const devDmgCounter = document.getElementById('dev-dmg-counter');
+  if (devDmgCounter) devDmgCounter.addEventListener('change', () => {
+    DMG_COUNTER = Math.max(0, parseInt(devDmgCounter.value) || 1);
+    rebuild();
+  });
+  devDmgPreempt.addEventListener('change', () => {
+    PREEMPT_DMG = Math.max(0, parseInt(devDmgPreempt.value) || 2);
+  });
+  devPreemptMs.addEventListener('change', () => {
+    PREEMPT_MS = Math.max(800, parseInt(devPreemptMs.value) || 2000);
+  });
+  devChargeMax.addEventListener('change', () => {
+    const v = Math.max(0, parseInt(devChargeMax.value) || 3);
+    playerCharge = Math.min(playerCharge, v);
+    rebuild();
+  });
+
+  // 作弊模式
+  devGod.addEventListener('change', () => { CHEAT.god = devGod.checked; });
+  devOneShot.addEventListener('change', () => { CHEAT.oneShot = devOneShot.checked; });
+
+  // 动作按钮
+  document.getElementById('dev-skip').addEventListener('click', () => {
+    if (phase === PHASE.SELECT) {
+      if (!player) { players[0]=createPlayerState(0); player=players[0]; player.active=true; player.inited=true; player.avatar.group.visible=true; }
+      if (player.combo.length === 0) player.combo = Array(COMBO_LEN).fill(MOVE.STONE);
+      onMoveConfirmed();
+    } else if (phase === PHASE.CHARGE) { roundCharged = true; roundPerfect = false; setPhase(PHASE.EXECUTE); }
+    else setMessage('仅在选招/充能阶段可跳过', true);
+  });
+  document.getElementById('dev-reset').addEventListener('click', () => {
+    startGame();
+    setMessage('已重置', true);
+  });
+
+  // 新手引导开始按钮
+  const tutBtn = document.getElementById('tut-start');
+  if (tutBtn) tutBtn.addEventListener('click', () => {
+    document.getElementById('tutorial-overlay').classList.add('hidden');
+    if (phase === PHASE.WAITING) startGame();
+  });
+
+  // 键盘：Q 开关面板；1石头 2剪刀 3升龙 4不出招（备用输入）；充能阶段空格/回车 = 出拳
+  window.addEventListener('keydown', e => {
+    if (e.key.toLowerCase() === 'q' && !e.ctrlKey && !e.metaKey) {
+      devPanel.classList.toggle('open');
+      e.preventDefault();
+      return;
+    }
+    if (!player) return;
+    const now = performance.now();
+    if (phase === PHASE.SELECT) {
+      if (DEMO) return;
+      const map = { '1':MOVE.STONE, '2':MOVE.SCISSORS, '3':MOVE.DRAGON, '4':MOVE.DODGE };
+      const mv = map[e.key];
+      if (mv !== undefined && player.combo.length < COMBO_LEN) {
+        player.combo.push(mv);
+        player.lastConfirm = now; player.gestureHoldStart = 0;
+        showComboConfirm(mv, player.combo.length);
+        sfx('confirm');
+        if (player.combo.length >= COMBO_LEN) onMoveConfirmed();
+      }
+    } else if (phase === PHASE.CHARGE && !roundCharged) {
+      if (e.key === ' ' || e.key === 'Enter') {
+        player.punchKeyed = true;
+        e.preventDefault();
+      }
+    } else if (phase === PHASE.COUNTER && !counterResolved) {
+      // 反击窗口：空格/回车/攻击键（1石头 2剪刀 3升龙） = 挥拳
+      const atk = { '1':MOVE.STONE, '2':MOVE.SCISSORS, '3':MOVE.DRAGON };
+      if (e.key === ' ' || e.key === 'Enter' || atk[e.key] !== undefined) {
+        player.punchKeyed = true;
+        e.preventDefault();
+      }
+    } else if (phase === PHASE.PREEMPT && !preemptResolved) {
+      // 抢占先机窗口：空格/回车/攻击键 = 出拳抢占
+      const atk = { '1':MOVE.STONE, '2':MOVE.SCISSORS, '3':MOVE.DRAGON };
+      if (e.key === ' ' || e.key === 'Enter' || atk[e.key] !== undefined) {
+        player.punchKeyed = true;
+        e.preventDefault();
+      }
+    } else if (phase === PHASE.BOSSRETALIATE && !retaliateResolved) {
+      // Boss 防守反击窗口：1(石头防御) / 4(闪避) / 空格 / 回车 = 化解
+      if (e.key === ' ' || e.key === 'Enter' || e.key === '1' || e.key === '4') {
+        player.punchKeyed = true;
+        e.preventDefault();
+      }
+    }
+  });
+}
+initDevPanel();
+
+// ═══════════════════════════════════════════════════════════
+//  音效系统（Web Audio 零依赖合成）
+// ═══════════════════════════════════════════════════════════
+let audioCtx = null;
+function ensureAudio() {
+  if (!audioCtx) {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (AC) audioCtx = new AC();
+  }
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+function tone(freq, dur, type='sine', vol=0.2, when=0, glideTo=null) {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime + when;
+  const osc = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, t0);
+  if (glideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(20, glideTo), t0 + dur);
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(vol, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  osc.connect(g); g.connect(audioCtx.destination);
+  osc.start(t0); osc.stop(t0 + dur + 0.02);
+}
+function noise(dur, vol=0.3, filterFreq=1800, when=0) {
+  if (!audioCtx) return;
+  const t0 = audioCtx.currentTime + when;
+  const len = Math.floor(audioCtx.sampleRate * dur);
+  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for (let i=0;i<len;i++) data[i] = (Math.random()*2-1) * (1 - i/len);
+  const src = audioCtx.createBufferSource();
+  src.buffer = buf;
+  const f = audioCtx.createBiquadFilter();
+  f.type = 'lowpass'; f.frequency.value = filterFreq;
+  const g = audioCtx.createGain();
+  g.gain.setValueAtTime(vol, t0);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  src.connect(f); f.connect(g); g.connect(audioCtx.destination);
+  src.start(t0);
+}
+const SFX = {
+  confirm: () => { tone(660, 0.12, 'square', 0.1); tone(880, 0.16, 'square', 0.1, 0.08); },
+  tick: () => { tone(320, 0.05, 'square', 0.06); },
+  heartbeat: () => { tone(90, 0.1, 'sine', 0.5); tone(70, 0.12, 'sine', 0.4, 0.08); },
+  chargeStart: () => { tone(220, 0.5, 'sine', 0.15, 0, 660); },
+  zap: () => { tone(1400, 0.18, 'square', 0.1, 0, 300); tone(2200, 0.12, 'sawtooth', 0.06, 0.03, 800); noise(0.12, 0.15, 6000); },
+  perfect: () => { tone(880, 0.1, 'triangle', 0.22); tone(1320, 0.22, 'triangle', 0.18, 0.07); noise(0.15, 0.18, 5000); },
+  punch: () => { noise(0.12, 0.25, 1200); tone(160, 0.1, 'square', 0.18); },
+  hit: () => { noise(0.18, 0.3, 900); tone(120, 0.15, 'square', 0.22, 0, 60); },
+  hurt: () => { noise(0.14, 0.22, 700); tone(100, 0.18, 'sawtooth', 0.16, 0, 50); },
+  flame: () => { noise(0.35, 0.28, 2400); tone(300, 0.35, 'sawtooth', 0.1, 0, 900); },
+  block: () => { tone(240, 0.1, 'square', 0.14); noise(0.08, 0.14, 2600); },
+  win: () => { tone(523, 0.14, 'triangle', 0.2); tone(659, 0.14, 'triangle', 0.2, 0.12); tone(784, 0.28, 'triangle', 0.22, 0.24); },
+  lose: () => { tone(330, 0.2, 'sawtooth', 0.16); tone(247, 0.2, 'sawtooth', 0.16, 0.16); tone(165, 0.4, 'sawtooth', 0.18, 0.32); },
+};
+function sfx(name) { ensureAudio(); const f = SFX[name]; if (f) f(); }
+
+// ═══════════════════════════════════════════════════════════
+//  身体校准流程（站立展开双臂标定肩宽）+ 灵敏度滑块
+// ═══════════════════════════════════════════════════════════
+const calibOverlay = document.getElementById('calib-overlay');
+const calibStage1 = document.getElementById('calib-stage-1');
+const calibStage2 = document.getElementById('calib-stage-2');
+const calibState1 = document.getElementById('calib-state-1');
+const calibSensInput = document.getElementById('calib-sens');
+const sensValEl = document.getElementById('sens-val');
+let calibSamples = [];
+let calibTimer = null;
+function openCalib() {
+  ensureAudio();
+  document.getElementById('tutorial-overlay').classList.add('hidden');
+  calibOverlay.classList.remove('hidden');
+  calibStage1.classList.add('active'); calibStage2.classList.remove('active');
+  calibState1.textContent = '张开双臂，保持 2 秒…';
+  calibSamples = [];
+  if (calibTimer) clearInterval(calibTimer);
+  calibTimer = setInterval(() => {
+    const p = players[0];
+    if (!p || !p.lm || !p.lm[KP.L_SHOULDER] || !p.lm[KP.R_SHOULDER] ||
+        p.lm[KP.L_SHOULDER].visibility < 0.3 || p.lm[KP.R_SHOULDER].visibility < 0.3) {
+      calibState1.textContent = '未检测到身体，请正对摄像头并张开双臂';
+      return;
+    }
+    const sw = Math.abs(p.lm[KP.R_SHOULDER].x - p.lm[KP.L_SHOULDER].x);
+    calibSamples.push(sw);
+    const n = Math.min(calibSamples.length, 30);
+    calibState1.textContent = `张开双臂… (${n}/30)`;
+    if (calibSamples.length >= 30) {
+      clearInterval(calibTimer);
+      const avg = calibSamples.reduce((a,b)=>a+b,0)/calibSamples.length;
+      CALIB_SHOULDER = Math.max(0.05, Math.min(0.45, avg));
+      try {
+        localStorage.setItem('rps_calib_shoulder', String(CALIB_SHOULDER));
+        localStorage.setItem('rps_calib_sens', String(SENSITIVITY));
+      } catch(e) {}
+      calibStage1.classList.remove('active');
+      calibStage2.classList.add('active');
+      sfx('confirm');
+    }
+  }, 200);
+}
+document.getElementById('tut-calib').addEventListener('click', openCalib);
+document.getElementById('calib-skip').addEventListener('click', () => {
+  if (calibTimer) clearInterval(calibTimer);
+  CALIB_SHOULDER = 0.14;
+  calibOverlay.classList.add('hidden');
+  startBtn.click();
+});
+document.getElementById('calib-done').addEventListener('click', () => {
+  if (calibTimer) clearInterval(calibTimer);
+  calibOverlay.classList.add('hidden');
+  startBtn.click();
+});
+if (calibSensInput) calibSensInput.addEventListener('input', () => {
+  SENSITIVITY = parseInt(calibSensInput.value) || 1;
+  if (sensValEl) sensValEl.textContent = ['低','中','高'][SENSITIVITY] || '中';
+  try { localStorage.setItem('rps_calib_sens', String(SENSITIVITY)); } catch(e) {}
+});
+// 读取已保存的校准数据
+try {
+  const savedSw = parseFloat(localStorage.getItem('rps_calib_shoulder'));
+  if (savedSw) CALIB_SHOULDER = Math.max(0.05, Math.min(0.45, savedSw));
+  const savedSens = parseInt(localStorage.getItem('rps_calib_sens'));
+  if (!isNaN(savedSens)) {
+    SENSITIVITY = Math.max(0, Math.min(2, savedSens));
+    if (calibSensInput) calibSensInput.value = SENSITIVITY;
+    if (sensValEl) sensValEl.textContent = ['低','中','高'][SENSITIVITY] || '中';
+  }
+} catch(e) {}
+
 window.addEventListener('resize', () => {
   camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(innerWidth, innerHeight);
@@ -1230,35 +3315,34 @@ window.addEventListener('resize', () => {
 // ═══════════════════════════════════════════════════════════
 overlay.width = innerWidth; overlay.height = innerHeight;
 let lastTime = performance.now();
+// ⚡🥊 统一时间缩放：抢占/反击/Boss防守反击判定窗口前 0.5 倍慢动作（视觉约 1.5s）→ 0.5s 内 1.2 倍加速回放 → 正常
+// 判定逻辑始终走真实时钟（performance.now），timeScale 只影响渲染/动画速率
+function timeScale() {
+  if (phase !== PHASE.PREEMPT && phase !== PHASE.COUNTER && phase !== PHASE.BOSSRETALIATE) return 1;
+  const el = performance.now() - phaseStart;
+  const slowReal = SLOW_VISUAL_MS * PREEMPT_SLOW;   // 慢动作真实时长（视觉 1.5s × 0.5）
+  if (el < slowReal) return PREEMPT_SLOW;           // 慢动作判定
+  if (el < slowReal + BOOST_MS) return BOOST_SPEED; // 加速回放（反差）
+  return 1;
+}
 function loop(now) {
-  const dt = Math.min(0.05, (now-lastTime)/1000);
+  const rawDt = Math.min(0.05, (now-lastTime)/1000);
   lastTime = now;
+  // ⚡🥊 统一时间缩放：抢占/反击判定 0.5 倍慢动作 → 0.5s 内 1.2 倍加速回放 → 正常（判定仍走真实时钟）
+  const dt = rawDt * timeScale();
 
   if (DEMO) demoPoses();
-  else if (!cameraActive) {
-    // 无摄像头时也尝试提供基本骨架（忽略）
-  }
 
-  // 每玩家手势采集 + 实时位置匹配
+  // 玩家手势采集
   players.forEach(p => {
-    if (p.active) {
-      // 每次检测都根据人体位置重新匹配轨道，保证 avatar 始终位于轨道中心
-      updatePlayerLaneFromPose(p);
-    }
-    if (p.active && p.alive) {
-      if (p.lm) {
-        const g = classifyGesture(p.lm);
-        if (g !== null) {
-          if (p.gesture !== g) { p.gesture = g; p.gestureHoldStart = now; }
-        } else {
-          p.gesture = null; p.gestureHoldStart = 0;
-        }
-        // 倾斜仅在 Boss 攻击阶段采样；其余阶段位置由 updatePlayerLaneFromPose 控制
-        if (phase === PHASE.BOSS_ATTACK) p.lean = detectLean(p.lm);
+    if (p.active && p.alive && p.lm) {
+      const g = classifyGesture(p.lm);
+      if (g !== null) {
+        if (p.gesture !== g) { p.gesture = g; p.gestureHoldStart = now; }
+      } else {
+        p.gesture = null; p.gestureHoldStart = 0;
       }
     }
-    // 更新虚拟形象
-    if (p.active) updateAvatar(p);
   });
 
   // 状态机
@@ -1266,22 +3350,34 @@ function loop(now) {
     case PHASE.WAITING:
       autoStartIfNeeded();
       break;
-    case PHASE.SELECT: {
-      players.forEach(p => { if (p.active && p.alive) tryConfirmGesture(p, now); });
-      if (allLocked() || now - phaseStart >= SELECT_MS) finishSelect();
-      break;
-    }
+    case PHASE.SELECT: updateSelect(dt, now); break;
+    case PHASE.CHARGE: updateCharge(dt, now); break;
     case PHASE.EXECUTE: updateExecute(dt, now); break;
-    case PHASE.BOSS_ATTACK: updateBossAttack(dt, now); break;
+    case PHASE.COUNTER: updateCounter(dt, now); break;
+    case PHASE.PREEMPT: updatePreempt(dt, now); break;
+    case PHASE.BOSSRETALIATE: updateBossRetaliate(dt, now); break;
     case PHASE.RESOLVE: updateResolve(dt, now); break;
-    case PHASE.ROUND_END:
-      if (now - phaseStart > ROUND_END_MS) startRound();
-      break;
     case PHASE.VICTORY:
     case PHASE.GAMEOVER:
       break;
   }
 
+  // 红方拳手动画（IDLE/STRIKE/HIT/DEATH）
+  updateBoxer(dt, now);
+
+  // 更新虚拟形象（固定站位）
+  players.forEach(p => { if (p.active) updateAvatar(p, dt); });
+
+  // 💨 闪避残影淡出
+  updateGhosts(dt);
+
+  // 特效与过肩相机
+  updateParticles(dt);
+  updateSpeedLines(dt);
+  updateFlash();
+  applyCamera();
+
+  updateThemeTransition(dt);
   updateHud();
   drawPoseDebug();
   updateFloats(dt);
@@ -1289,7 +3385,99 @@ function loop(now) {
   renderer.render(scene, camera);
   requestAnimationFrame(loop);
 }
+createBoxer();   // 红方拳手（在顶层所有声明完成后创建）
 requestAnimationFrame(loop);
+
+// 调试钩子：供自动化 playtest 检查内部状态
+window.__game = () => ({
+  phase,
+  phaseStart,
+  phaseElapsed: performance.now() - phaseStart,
+  timeScaleNow: (phase === PHASE.PREEMPT || phase === PHASE.COUNTER || phase === PHASE.BOSSRETALIATE) ? timeScale() : 1,
+  round,
+  bossHp,
+  bossMoves,
+  nextBossMove,
+  DEMO,
+  activeCount,
+  AI_LEVEL,
+  perfectStreak,
+  comboBuff,
+  combo: player ? player.combo : [],
+  execSeg,
+  execLen,
+  roundPerfect,
+  roundCharged,
+  phaseStart,
+  chargeFrac: nowChargeFrac(),
+  counter: { ms: COUNTER_MS, perfectMs: COUNTER_PERFECT_MS, resolved: counterResolved, result: counterResult, frac: phase===PHASE.COUNTER ? Math.min(1,(performance.now()-phaseStart)/COUNTER_MS) : 0 },
+  preempt: { ms: PREEMPT_MS, resolved: preemptResolved, result: preemptResult, frac: phase===PHASE.PREEMPT ? Math.min(1,(performance.now()-phaseStart)/PREEMPT_MS) : 0 },
+  player: player ? { active:player.active, alive:player.alive, hp:player.hp, move:player.move, combo:player.combo, gesture:player.gesture, gestureHoldStart:player.gestureHoldStart, lastConfirm:player.lastConfirm, punchKeyed:player.punchKeyed, visible:player.avatar.group.visible, posZ: player.avatar.group.position.z, clashZ: player.clashZ, animActive: player.animState ? player.animState.active : false, animMove: player.animState ? player.animState.move : null } : null,
+  boss: { alive: bossHp>0, deathT: boss.deathT, hitFlashT: boss.hitFlashT, posZ: boss.group.position.z, clashZ: boss.clashZ },
+  cam: { pos: camera.position.toArray() },
+  judgeStats: { playerDmg: roundPlayerDmg, bossDmg: roundBossDmg },
+  floats: floatPool.map(f => { const img = f.sprite.material.map ? f.sprite.material.map.image : null; return { text: (img && img.__text) || '?', texW: img?img.width:0, texH: img?img.height:0, scale: [f.sprite.scale.x, f.sprite.scale.y] }; }),
+});
+
+// 调试/自动化控制接口（playtest 与开发者使用）
+window.__judge = () => {
+  const RN = ['PLAYER_WIN','BOSS_WIN','BOTH_HIT','NEUTRAL','PLAYER_STUN','BOSS_STUN'];
+  return [0,1,2,3].map(p => [0,1,2,3].map(b => {
+    const c = JUDGE_TABLE[p][b];
+    return RN[c.result] + '/' + c.label;
+  }));
+};
+window.__play = {
+  setParams(o) {
+    if (o.selectMs !== undefined) SELECT_MS = o.selectMs;
+    if (o.selectHoldMs !== undefined) SELECT_HOLD_MS = o.selectHoldMs;
+    if (o.chargeMs !== undefined) CHARGE_MS = o.chargeMs;
+    if (o.slotMs !== undefined) SLOT_MS = o.slotMs;
+    if (o.roundEndMs !== undefined) ROUND_END_MS = o.roundEndMs;
+    if (o.bossHp !== undefined) MAX_HP_BOSS = o.bossHp;
+    if (o.ai !== undefined) AI_LEVEL = o.ai;
+    if (o.counterMs !== undefined) COUNTER_MS = o.counterMs;
+    if (o.counterPerfectMs !== undefined) COUNTER_PERFECT_MS = o.counterPerfectMs;
+  },
+  startGame() { startGame(); },
+  setDemo(v) { DEMO = !!v; },
+  forceSelect(move) {
+    if (phase === PHASE.SELECT && player) {
+      player.combo = Array(COMBO_LEN).fill(move);
+      player.lastConfirm = performance.now(); player.gestureHoldStart = 0;
+      onMoveConfirmed();
+    }
+  },
+  // playtest 用：指定长度的连招（便于单段精确验证判定）
+  forceSelectLen(move, len) {
+    if (phase === PHASE.SELECT && player) {
+      len = Math.max(1, Math.min(COMBO_LEN, len || COMBO_LEN));
+      player.combo = Array(len).fill(move);
+      player.lastConfirm = performance.now(); player.gestureHoldStart = 0;
+      onMoveConfirmed();
+    }
+  },
+  setNextBoss(move) { bossMoves = Array(COMBO_LEN).fill(move); nextBossMove = bossMoves[0]; },
+  setBossMoves(arr) { if (Array.isArray(arr) && arr.length >= 1 && arr.length <= COMBO_LEN) { bossMoves = arr.slice(); nextBossMove = bossMoves[0]; } },
+  forcePunch() { if (player) player.punchKeyed = true; },
+  clearPlayerGesture() { lastPoses = []; if (player) player.lm = null; },
+  // 测试用：直接判定模拟 landmark 是否「手臂挥过肩」
+  armSwung(lm) { return armSwungOverShoulder(lm); },
+  // 测试用：注入模拟 landmark 到玩家骨骼（便于自动化验证反击挥拳）
+  setLm(arr) { if (player) player.lm = arr; },
+  // playtest 用：直接读写架势条（玩家/Boss）
+  getCharges() { return { p: playerCharge, b: bossCharge, pMod: nextAtkMod, bMod: bossNextAtkMod }; },
+  setCharges(o) {
+    if (o && o.p !== undefined) playerCharge = o.p;
+    if (o && o.b !== undefined) bossCharge = o.b;
+    updateHud();
+  },
+  // playtest 用：替换 Math.random（注入确定性随机，便于复现闪避成败）；传 null 恢复原始
+  setRandom(fn) {
+    Math.random = fn || _origRandom;
+  },
+  getState() { return { phase, round, playerHp: player?player.hp:0, bossHp, playerCharge, bossCharge, nextAtkMod, bossNextAtkMod, playerCombo: player?player.combo:[], bossMoves: bossMoves.slice(), roundPlayerDmg, roundBossDmg, end }; },
+};
 </script>
 </body>
 </html>
